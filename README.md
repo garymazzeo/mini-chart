@@ -13,13 +13,13 @@ A tiny JavaScript charting library for bar, line, and pie charts. It renders SVG
 
 ## Install
 
-This repository does not include a package manifest, so use the source files directly instead of installing it through npm:
+Use the source files directly; the core and custom element have no runtime dependencies. Install the development dependencies to run the checks:
 
-1. Clone or download this repository.
-2. Serve the files from a local web server or include them in your application.
-3. For the React component, use an existing React project with `react` and its TypeScript declarations installed, plus a bundler configured for TSX.
+```sh
+npm install
+```
 
-The custom element uses native JavaScript modules and does not require React.
+The custom element uses native JavaScript modules and does not require React. The React wrapper requires React, TypeScript declarations, and a bundler configured for TSX in the consuming application.
 
 ## Data format
 
@@ -66,7 +66,7 @@ The element also accepts JSON data through a `data` attribute:
 ></mini-chart>
 ```
 
-Supported element attributes are `type`, `width`, `height`, and `data`. The default type is `bar`; the default chart dimensions are 480 by 300. The element renders inside a shadow root.
+Supported element attributes are `type`, `width`, `height`, `data`, `caption`, `description`, `table`, and `interactive`. The default type is `bar`; the default chart dimensions are 480 by 300. `interactive="false"` disables keyboard/tooltip interaction. The element renders inside a shadow root.
 
 ### React
 
@@ -81,11 +81,24 @@ const data = {
 };
 
 export function SalesChart() {
-  return <Chart type="line" data={data} width={480} height={300} />;
+  return <Chart
+    type="line"
+    data={data}
+    caption="Monthly sales"
+    description="Sales by month for the first quarter."
+    table="hidden"
+    interactive
+  />;
 }
 ```
 
-`Chart` accepts `type`, `data`, `width`, `height`, and `colors` props. Its defaults are `type="bar"`, `width={480}`, and `height={300}`. Keep the `data` object reference stable between renders (or memoize it) to benefit from the component's memoization.
+`Chart` accepts `type`, `data`, `width`, `height`, `colors`, `caption`, `description`, `table`, `interactive`, and optional `idPrefix` props. React's `useId()` is appended to `idPrefix` so IDs remain unique per instance. Defaults are `type="bar"`, `width={480}`, `height={300}`, `table="hidden"`, and `interactive`. `table` can be `hidden`, `visible`, or `none`; `none` requires a non-empty `description`. Keep the `data` object reference stable between renders (or memoize it) to benefit from the component's memoization.
+
+### Accessibility options
+
+Both wrappers render a `<figure>` with a visible caption when supplied, accessible SVG title/description, and a semantic data table. The default visually clipped table remains in the accessibility tree. In interactive mode, focus the chart SVG and use the arrow keys to explore data, Home/End to move to category boundaries, and Escape to dismiss the tooltip. The table remains available as a complete text alternative.
+
+For the custom element, `caption`, `description`, `table`, and `interactive` are HTML attributes. The `caption` attribute takes precedence over host `aria-label`/`aria-labelledby`; without a caption those host names are forwarded to the figure.
 
 ### Chart types
 
@@ -103,11 +116,20 @@ With Node.js and npm installed, run this from the repository root to start a tem
 npx --yes http-server . -p 8000
 ```
 
-Then visit <http://localhost:8000/mini-chart%20demo.html>. The demo shows bar, line, and pie charts with a button to randomize the data. A local server is recommended because the custom element loads JavaScript modules.
+Then visit <http://localhost:8000/demo.html>. The demo shows all three chart types and table modes, plus keyboard instructions and a randomize button. `docs/index.html` is generated from the same sources for static hosting.
 
 ## Development
 
-There is no configured package manager, build command, or automated test suite in the repository yet. `core.js` contains the chart builder, `core.d.ts` provides its TypeScript declarations, `mini-chart.js` defines the custom element, and `MiniChart.tsx` provides the React wrapper. `page.jsx` is a standalone React demo page.
+`core.js` contains the framework-agnostic chart builder; `core.d.ts` provides its TypeScript declarations; `mini-chart.js` defines the custom element; and `MiniChart.tsx` provides the React wrapper. The assembled `page.jsx`, `demo.html`, and `docs/index.html` are regenerated with:
+
+```sh
+npx playwright install chromium
+npm run build:demos
+npm test
+npm run typecheck
+```
+
+The automated suite includes Node unit tests, Playwright interaction checks, and axe-core checks. Manual assistive-technology and browser-zoom checks are listed in [ACCESSIBILITY.md](ACCESSIBILITY.md).
 
 ## License
 

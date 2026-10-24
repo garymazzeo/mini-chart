@@ -1,197 +1,654 @@
 'use client';
-import { createElement, useMemo, useState } from 'react';
-
+import {
+  createElement,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState
+} from "react";
 // core.js — framework-agnostic. No DOM, no React.
-// buildChart() returns a plain tree: { tag, attrs, children }. Children may be strings (text).
+// buildChart() returns an SVG tree; buildFigure() wraps it with HTML alternatives.
 
-const PALETTE = ['#4e79a7', '#f28e2b', '#e15759', '#76b7b2', '#59a14f', '#edc948', '#b07aa1'];
+// Verified contrast against #fff / #14181b respectively: 5.185/3.443, 3.867/4.617,
+// 3.421/5.219, 3.061/5.833, 4.995/3.575, 4.795/3.724, 4.831/3.696.
+const PALETTE = ['#0072B2', '#D55E00', '#009E73', '#CC79A7', '#A06100', '#007F86', '#8C6D31'];
 
-const h = (tag, attrs = {}, ...children) => ({ tag, attrs, children: children.flat().filter((c) => c != null) });
-const r = (n) => +n.toFixed(2);
-const linear = (d0, d1, r0, r1) => (v) => (d1 === d0 ? (r0 + r1) / 2 : r0 + ((v - d0) / (d1 - d0)) * (r1 - r0));
+const MARKERS = ['circle', 'square', 'triangle', 'diamond', 'cross', 'plus', 'hexagon'];
+const DASHES = ['', '6 3', '2 2', '8 2 2 2', '1 3', '5 2 1 2', '3 2'];
+const HATCHES = ['M-2 8L8 -2M2 10L10 2', 'M-2 -2L8 8M2 -2L10 6', 'M2 0V8M6 0V8', 'M0 2H8M0 6H8', 'M0 0L8 8M0 8L8 0'];
+const TABLE_HIDDEN_STYLE = 'position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0';
+let generatedId = 0;
 
-// Pick "nice" axis ticks: step is 1, 2, or 5 times a power of ten.
+const h = (tag, attrs = {}, ...children) => ({ tag, attrs, children: children.flat().filter((child) => child != null) });
+const r = (number) => +number.toFixed(2);
+const linear = (d0, d1, r0, r1) => (value) => (d1 === d0 ? (r0 + r1) / 2 : r0 + ((value - d0) / (d1 - d0)) * (r1 - r0));
+const safeId = (prefix) => String(prefix).replace(/[^A-Za-z0-9_.:-]/g, '-');
+const format = (value) => Number.isFinite(value) ? String(value) : '';
+
+function normalizeOptions(options = {}) {
+  const type = options.type ?? 'bar';
+  const table = options.table ?? 'hidden';
+  if (!['bar', 'line', 'pie'].includes(type)) throw new TypeError(`Unknown chart type: ${type}`);
+  if (!['hidden', 'visible', 'none'].includes(table)) throw new TypeError(`Unknown table mode: ${table}`);
+  if (table === 'none' && !String(options.description ?? '').trim()) {
+    throw new TypeError('A description is required when table is "none".');
+  }
+  return {
+    ...options,
+    type,
+    table,
+    data: options.data ?? { labels: [], series: [] },
+    width: Number(options.width) > 0 ? Number(options.width) : 480,
+    height: Math.max(160, Number(options.height) || 300),
+    colors: options.colors?.length ? options.colors : PALETTE,
+    interactive: options.interactive !== false,
+    idPrefix: safeId(options.idPrefix || `mini-chart-${++generatedId}`),
+  };
+}
+
+function titleFor(type, series) {
+  const names = series.map((item, index) => item.name || `Series ${index + 1}`);
+  const label = type === 'pie' ? 'Pie' : type === 'line' ? 'Line' : 'Bar';
+  return `${label} chart${names.length ? ` of ${names.join(', ')}` : ''}`;
+}
+
+function descriptionFor(type, data, explicit) {
+  if (String(explicit ?? '').trim()) return String(explicit).trim();
+  const labels = data.labels ?? [];
+  const series = data.series ?? [];
+  if (!labels.length || !series.length) return 'No data is available for this chart.';
+  const parts = [`${series.length} ${series.length === 1 ? 'series' : 'series'}`, `${labels.length} ${labels.length === 1 ? 'category' : 'categories'}`];
+  const summaries = series.map((item, index) => {
+    const values = (item.values ?? []).filter(Number.isFinite);
+    if (!values.length) return '';
+    const name = item.name || `Series ${index + 1}`;
+    return `${name} ranges from ${Math.min(...values)} to ${Math.max(...values)}`;
+  }).filter(Boolean);
+  return `${parts.join(', ')}.${summaries.length ? ` ${summaries.join('. ')}.` : ''}`;
+}
+
 function niceTicks(min, max, count = 5) {
   if (min === max) max = min + 1;
   const raw = (max - min) / count;
   const pow = 10 ** Math.floor(Math.log10(raw));
-  const f = raw / pow;
-  const step = (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * pow;
-  const lo = Math.floor(min / step) * step;
-  const hi = Math.ceil(max / step) * step;
+  const factor = raw / pow;
+  const step = (factor < 1.5 ? 1 : factor < 3 ? 2 : factor < 7 ? 5 : 10) * pow;
+  const low = Math.floor(min / step) * step;
+  const high = Math.ceil(max / step) * step;
   const ticks = [];
-  for (let v = lo; v <= hi + step / 2; v += step) ticks.push(+v.toFixed(10));
+  for (let value = low; value <= high + step / 2; value += step) ticks.push(+value.toFixed(10));
   return ticks;
 }
 
-function legend(entries, width, height) {
-  const w = 100;
-  const x0 = Math.max(8, (width - entries.length * w) / 2);
-  return entries.map((e, i) =>
-    h('g', { transform: `translate(${r(x0 + i * w)} ${height - 14})` },
-      h('rect', { width: 10, height: 10, y: -9, rx: 2, fill: e.color }),
-      h('text', { x: 15, fill: 'currentColor' }, String(e.name))));
+function markerShape(shape, x, y, size, fill, attrs = {}) {
+  if (shape === 'square') return h('rect', { x: r(x - size), y: r(y - size), width: 2 * size, height: 2 * size, fill, ...attrs });
+  if (shape === 'triangle') return h('path', { d: `M${r(x)} ${r(y - size)}L${r(x + size)} ${r(y + size)}L${r(x - size)} ${r(y + size)}Z`, fill, ...attrs });
+  if (shape === 'diamond') return h('path', { d: `M${r(x)} ${r(y - size)}L${r(x + size)} ${r(y)}L${r(x)} ${r(y + size)}L${r(x - size)} ${r(y)}Z`, fill, ...attrs });
+  if (shape === 'cross') return h('path', { d: `M${r(x - size)} ${r(y - size / 2)}H${r(x - size / 2)}V${r(y - size)}H${r(x + size / 2)}V${r(y - size / 2)}H${r(x + size)}V${r(y + size / 2)}H${r(x + size / 2)}V${r(y + size)}H${r(x - size / 2)}V${r(y + size / 2)}H${r(x - size)}Z`, fill, ...attrs });
+  if (shape === 'plus') return h('path', { d: `M${r(x - size / 3)} ${r(y - size)}H${r(x + size / 3)}V${r(y - size / 3)}H${r(x + size)}V${r(y + size / 3)}H${r(x + size / 3)}V${r(y + size)}H${r(x - size / 3)}V${r(y + size / 3)}H${r(x - size)}V${r(y - size / 3)}H${r(x - size / 3)}Z`, fill, ...attrs });
+  if (shape === 'hexagon') return h('path', { d: `M${r(x - size)} ${r(y)}L${r(x - size / 2)} ${r(y - size)}H${r(x + size / 2)}L${r(x + size)} ${r(y)}L${r(x + size / 2)} ${r(y + size)}H${r(x - size / 2)}Z`, fill, ...attrs });
+  return h('circle', { cx: r(x), cy: r(y), r: size, fill, ...attrs });
 }
 
-function axisChart(type, { labels, series, width, height, color }) {
-  const showLegend = series.length > 1;
-  const m = { top: 16, right: 16, bottom: showLegend ? 56 : 34, left: 48 };
-  const iw = width - m.left - m.right;
-  const ih = height - m.top - m.bottom;
+function focusRing(x, y, size = 8) {
+  return [
+    h('circle', { cx: r(x), cy: r(y), r: size + 2, fill: 'none', stroke: '#fff', 'stroke-width': 6, class: 'mc-focus-light', 'aria-hidden': 'true' }),
+    h('circle', { cx: r(x), cy: r(y), r: size + 2, fill: 'none', stroke: '#000', 'stroke-width': 2.5, class: 'mc-focus-dark', 'aria-hidden': 'true' }),
+  ];
+}
 
-  const all = series.flatMap((s) => s.values).filter(Number.isFinite);
-  let lo = all.length ? Math.min(...all) : 0;
-  let hi = all.length ? Math.max(...all) : 1;
-  if (type === 'bar') { lo = Math.min(lo, 0); hi = Math.max(hi, 0); }
-  const ticks = niceTicks(lo, hi);
-  const y = linear(ticks[0], ticks[ticks.length - 1], m.top + ih, m.top);
-  const band = iw / labels.length;
-  const cx = (i) => m.left + band * (i + 0.5);
+function legend(entries, width, startY) {
+  if (!entries.length) return { nodes: [], rows: 0 };
+  const columns = Math.max(1, Math.floor((width - 20) / 132));
+  const cellWidth = (width - 20) / columns;
+  const rows = Math.ceil(entries.length / columns);
+  const nodes = entries.map((entry, index) => {
+    const row = Math.floor(index / columns);
+    const column = index % columns;
+    const x = 10 + column * cellWidth;
+    const y = startY + row * 18;
+    return h('g', { transform: `translate(${r(x)} ${r(y)})`, class: 'mc-legend-item' },
+      markerShape(entry.marker ?? 'square', 5, -4, 4, entry.color, { 'aria-hidden': 'true' }),
+      h('text', { x: 13, y: 0, fill: 'currentColor', class: 'mc-legend-label' }, String(entry.name)));
+  });
+  return { nodes, rows };
+}
 
-  const out = [];
-  for (const t of ticks) {
+function patternDefs(idPrefix, series, color) {
+  const patterns = series.map((item, index) => {
+    if (index < 2) return null;
+    const patternId = `${idPrefix}-pattern-${index}`;
+    const hatch = HATCHES[(index - 2) % HATCHES.length];
+    return h('pattern', { id: patternId, width: 8, height: 8, patternUnits: 'userSpaceOnUse' },
+      h('rect', { width: 8, height: 8, fill: color(index), class: 'mc-pattern-background' }),
+      h('path', { d: hatch, stroke: 'Canvas', 'stroke-width': 2, class: 'mc-pattern-line' }));
+  });
+  return h('defs', {}, patterns);
+}
+
+function axisChart(options, color, titleId, descId) {
+  const { type, data, width, height, idPrefix, interactive, activePoint } = options;
+  const labels = data.labels ?? [];
+  const series = data.series ?? [];
+  const hasLegend = series.length > 1;
+  const columns = Math.max(1, Math.floor((width - 20) / 132));
+  const legendRows = hasLegend ? Math.ceil(series.length / columns) : 0;
+  const margins = { top: 24, right: 12, bottom: 32 + legendRows * 18, left: 46 };
+  const innerWidth = Math.max(1, width - margins.left - margins.right);
+  const innerHeight = Math.max(1, height - margins.top - margins.bottom);
+  const allValues = series.flatMap((item) => item.values ?? []).filter(Number.isFinite);
+  let low = allValues.length ? Math.min(...allValues) : 0;
+  let high = allValues.length ? Math.max(...allValues) : 1;
+  if (type === 'bar') { low = Math.min(low, 0); high = Math.max(high, 0); }
+  const ticks = niceTicks(low, high);
+  const y = linear(ticks[0], ticks[ticks.length - 1], margins.top + innerHeight, margins.top);
+  const band = innerWidth / Math.max(1, labels.length);
+  const centerX = (index) => margins.left + band * (index + 0.5);
+  const colorAt = (index) => series[index]?.color ?? color(index);
+  const out = [patternDefs(idPrefix, series, colorAt)];
+
+  for (const tick of ticks) {
     out.push(
-      h('line', { x1: m.left, x2: m.left + iw, y1: r(y(t)), y2: r(y(t)), stroke: 'currentColor', 'stroke-opacity': 0.15 }),
-      h('text', { x: m.left - 8, y: r(y(t)), 'text-anchor': 'end', 'dominant-baseline': 'middle', fill: 'currentColor', 'fill-opacity': 0.7 }, String(t)));
+      h('line', { x1: margins.left, x2: margins.left + innerWidth, y1: r(y(tick)), y2: r(y(tick)), stroke: 'currentColor', 'stroke-opacity': 0.22, class: 'mc-gridline', 'aria-hidden': 'true' }),
+      h('text', { x: margins.left - 8, y: r(y(tick)), 'text-anchor': 'end', 'dominant-baseline': 'middle', fill: 'currentColor', class: 'mc-axis-label' }, String(tick)));
   }
-  labels.forEach((l, i) =>
-    out.push(h('text', { x: r(cx(i)), y: m.top + ih + 18, 'text-anchor': 'middle', fill: 'currentColor', 'fill-opacity': 0.7 }, String(l))));
 
-  series.forEach((s, si) => {
-    const c = color(si);
+  const widestLabel = labels.reduce((widest, label) => Math.max(widest, String(label).length * 7.2), 0);
+  const labelStep = Math.max(1, Math.ceil(widestLabel / Math.max(1, band - 10)));
+  labels.forEach((label, index) => {
+    if (index % labelStep !== 0) return;
+    out.push(h('text', { x: r(centerX(index)), y: margins.top + innerHeight + 18, 'text-anchor': 'middle', fill: 'currentColor', class: 'mc-axis-label' }, String(label)));
+  });
+
+  const pointPositions = new Map();
+  series.forEach((item, seriesIndex) => {
+    const seriesColor = colorAt(seriesIndex);
     if (type === 'bar') {
-      const bw = (band * 0.8) / series.length;
-      s.values.forEach((v, i) => {
-        if (!Number.isFinite(v)) return;
-        const x = cx(i) - band * 0.4 + si * bw;
-        const top = Math.min(y(v), y(0));
-        out.push(h('rect', { x: r(x), y: r(top), width: r(Math.max(bw - 1, 1)), height: r(Math.abs(y(v) - y(0))), fill: c },
-          h('title', {}, `${s.name ?? ''} ${labels[i]}: ${v}`.trim())));
+      const barWidth = (band * 0.8) / Math.max(1, series.length);
+      (item.values ?? []).forEach((value, categoryIndex) => {
+        if (!Number.isFinite(value) || categoryIndex >= labels.length) return;
+        const x = centerX(categoryIndex) - band * 0.4 + seriesIndex * barWidth;
+        const top = Math.min(y(value), y(0));
+        const barHeight = Math.max(1, Math.abs(y(value) - y(0)));
+        const px = x + Math.max(barWidth - 1, 1) / 2;
+        const py = y(value);
+        const active = activePoint?.series === seriesIndex && activePoint?.category === categoryIndex;
+        pointPositions.set(`${seriesIndex}:${categoryIndex}`, { x: px, y: py, size: 8, text: `${item.name || `Series ${seriesIndex + 1}`}, ${labels[categoryIndex]}: ${value}` });
+        const bar = h('rect', { x: r(x), y: r(top), width: r(Math.max(barWidth - 1, 1)), height: r(barHeight), fill: seriesIndex > 1 ? `url(#${idPrefix}-pattern-${seriesIndex})` : seriesColor, class: 'mc-bar' });
+        const ring = active ? [
+          h('rect', { x: r(x - 3), y: r(top - 3), width: r(Math.max(barWidth - 1, 1) + 6), height: r(barHeight + 6), fill: 'none', stroke: '#fff', 'stroke-width': 6, class: 'mc-focus-light', 'aria-hidden': 'true' }),
+          h('rect', { x: r(x - 3), y: r(top - 3), width: r(Math.max(barWidth - 1, 1) + 6), height: r(barHeight + 6), fill: 'none', stroke: '#000', 'stroke-width': 2.5, class: 'mc-focus-dark', 'aria-hidden': 'true' }),
+        ] : [];
+        out.push(h('g', { 'data-point-category': categoryIndex, 'data-point-series': seriesIndex, class: 'mc-point', 'aria-hidden': 'true' }, bar, ring));
       });
     } else {
-      let d = '', pen = false;
-      s.values.forEach((v, i) => {
-        if (!Number.isFinite(v)) { pen = false; return; }
-        d += `${pen ? 'L' : 'M'}${r(cx(i))} ${r(y(v))}`;
+      let path = '';
+      let pen = false;
+      (item.values ?? []).forEach((value, categoryIndex) => {
+        if (!Number.isFinite(value) || categoryIndex >= labels.length) { pen = false; return; }
+        path += `${pen ? 'L' : 'M'}${r(centerX(categoryIndex))} ${r(y(value))}`;
         pen = true;
       });
-      out.push(h('path', { d, fill: 'none', stroke: c, 'stroke-width': 2, 'stroke-linejoin': 'round' }));
-      s.values.forEach((v, i) => {
-        if (!Number.isFinite(v)) return;
-        out.push(h('circle', { cx: r(cx(i)), cy: r(y(v)), r: 3.5, fill: c },
-          h('title', {}, `${s.name ?? ''} ${labels[i]}: ${v}`.trim())));
+      out.push(h('path', { d: path, fill: 'none', stroke: seriesColor, 'stroke-width': 2.5, 'stroke-dasharray': DASHES[seriesIndex % DASHES.length], 'stroke-linejoin': 'round', class: 'mc-line', 'aria-hidden': 'true' }));
+      (item.values ?? []).forEach((value, categoryIndex) => {
+        if (!Number.isFinite(value) || categoryIndex >= labels.length) return;
+        const x = centerX(categoryIndex), py = y(value);
+        const active = activePoint?.series === seriesIndex && activePoint?.category === categoryIndex;
+        pointPositions.set(`${seriesIndex}:${categoryIndex}`, { x, y: py, size: 8, text: `${item.name || `Series ${seriesIndex + 1}`}, ${labels[categoryIndex]}: ${value}` });
+        const marker = markerShape(MARKERS[seriesIndex % MARKERS.length], x, py, active ? 5 : 4, seriesColor, { 'data-marker': MARKERS[seriesIndex % MARKERS.length], stroke: 'Canvas', 'stroke-width': 1, class: 'mc-marker' });
+        out.push(h('g', { 'data-point-category': categoryIndex, 'data-point-series': seriesIndex, class: 'mc-point', 'aria-hidden': 'true' }, marker, active ? focusRing(x, py, 6) : []));
       });
     }
   });
 
-  if (showLegend) out.push(...legend(series.map((s, i) => ({ name: s.name ?? `Series ${i + 1}`, color: color(i) })), width, height));
+  if (hasLegend) {
+    const entries = series.map((item, index) => ({ name: item.name ?? `Series ${index + 1}`, color: colorAt(index), marker: MARKERS[index % MARKERS.length] }));
+    out.push(...legend(entries, width, height - legendRows * 18 + 4).nodes);
+  }
+
+  const active = activePoint && pointPositions.get(`${activePoint.series}:${activePoint.category}`);
+  if (interactive && active) out.push(tooltip(active, width, height));
   return out;
 }
 
-function pieChart({ labels, series, width, height, color }) {
-  const vals = series[0].values.map((v) => Math.max(0, Number(v) || 0));
-  const total = vals.reduce((a, b) => a + b, 0);
+function pieChart(options, color) {
+  const { data, width, height, idPrefix, activePoint, interactive } = options;
+  const labels = data.labels ?? [];
+  const values = (data.series?.[0]?.values ?? []).map((value) => Number.isFinite(value) ? Math.max(0, value) : 0);
+  const total = values.reduce((sum, value) => sum + value, 0);
   if (!total) return null;
-  const legendH = 28;
-  const cx = width / 2, cy = (height - legendH) / 2;
-  const rad = Math.min(width, height - legendH) / 2 - 8;
-  const pt = (a) => [r(cx + rad * Math.cos(a)), r(cy + rad * Math.sin(a))];
+  const columns = Math.max(1, Math.floor((width - 20) / 132));
+  const legendRows = Math.ceil(labels.length / columns);
+  const legendHeight = 12 + legendRows * 18;
+  const cx = width / 2;
+  const cy = (height - legendHeight) / 2;
+  const radius = Math.max(20, Math.min(width, height - legendHeight) / 2 - 12);
+  const point = (angle) => [r(cx + radius * Math.cos(angle)), r(cy + radius * Math.sin(angle))];
+  const out = [];
+  const positions = new Map();
+  let angle = -Math.PI / 2;
+  const totalNonzero = values.filter((value) => value > 0).length;
 
-  let a = -Math.PI / 2;
-  const out = vals.map((v, i) => {
-    if (!v) return null;
-    const tip = h('title', {}, `${labels[i]}: ${v} (${((v / total) * 100).toFixed(1)}%)`);
-    if (v === total) return h('circle', { cx, cy, r: rad, fill: color(i) }, tip);
-    const sweep = (v / total) * 2 * Math.PI;
-    const [x0, y0] = pt(a), [x1, y1] = pt(a + sweep);
-    a += sweep;
-    const d = `M${cx} ${cy}L${x0} ${y0}A${rad} ${rad} 0 ${sweep > Math.PI ? 1 : 0} 1 ${x1} ${y1}Z`;
-    return h('path', { d, fill: color(i) }, tip);
+  values.forEach((value, index) => {
+    if (!value) return;
+    const sweep = (value / total) * Math.PI * 2;
+    const midpoint = angle + sweep / 2;
+    const [x, y] = point(midpoint);
+    const [x0, y0] = point(angle);
+    const [x1, y1] = point(angle + sweep);
+    const active = activePoint?.category === index;
+    const title = labels[index];
+    const percentage = `${(value / total * 100).toFixed(1).replace(/\.0$/, '')}%`;
+    const description = `${title}: ${format(value)}, ${percentage}`;
+    positions.set(`0:${index}`, { x, y, size: 8, text: description });
+    const slice = totalNonzero === 1
+      ? h('circle', { cx, cy, r: radius, fill: color(index), stroke: 'Canvas', 'stroke-width': 2, class: 'mc-pie-slice' })
+      : h('path', { d: `M${cx} ${cy}L${x0} ${y0}A${radius} ${radius} 0 ${sweep > Math.PI ? 1 : 0} 1 ${x1} ${y1}Z`, fill: color(index), stroke: 'Canvas', 'stroke-width': 2, class: 'mc-pie-slice' });
+    const ring = active ? (totalNonzero === 1
+      ? [h('circle', { cx, cy, r: radius + 3, fill: 'none', stroke: '#fff', 'stroke-width': 6, class: 'mc-focus-light', 'aria-hidden': 'true' }), h('circle', { cx, cy, r: radius + 3, fill: 'none', stroke: '#000', 'stroke-width': 2.5, class: 'mc-focus-dark', 'aria-hidden': 'true' })]
+      : [h('path', { d: `M${cx} ${cy}L${x0} ${y0}A${radius} ${radius} 0 ${sweep > Math.PI ? 1 : 0} 1 ${x1} ${y1}Z`, fill: 'none', stroke: '#fff', 'stroke-width': 6, class: 'mc-focus-light', 'aria-hidden': 'true' }), h('path', { d: `M${cx} ${cy}L${x0} ${y0}A${radius} ${radius} 0 ${sweep > Math.PI ? 1 : 0} 1 ${x1} ${y1}Z`, fill: 'none', stroke: '#000', 'stroke-width': 2.5, class: 'mc-focus-dark', 'aria-hidden': 'true' })]) : [];
+    out.push(h('g', { 'data-point-category': index, 'data-point-series': 0, class: 'mc-point', 'aria-hidden': 'true' }, slice, ring));
+    angle += sweep;
   });
-  out.push(...legend(labels.map((l, i) => ({ name: l, color: color(i) })), width, height));
+
+  const entries = labels.map((name, index) => ({ name, color: color(index), marker: MARKERS[index % MARKERS.length] }));
+  out.push(...legend(entries, width, height - legendRows * 18 + 4).nodes);
+  const active = activePoint && positions.get(`0:${activePoint.category}`);
+  if (interactive && active) out.push(tooltip(active, width, height));
   return out;
 }
 
-/**
- * @param {{ type?: 'bar'|'line'|'pie', data: { labels: string[], series: {name?: string, values: number[], color?: string}[] },
- *           width?: number, height?: number, colors?: string[] }} opts
- */
-function buildChart({ type = 'bar', data, width = 480, height = 300, colors = PALETTE } = {}) {
-  const labels = data?.labels ?? [];
-  const series = data?.series ?? [];
-  const svg = (kids, label = `${type} chart`) =>
-    h('svg', { viewBox: `0 0 ${width} ${height}`, width: '100%', role: 'img', 'aria-label': label,
-      'font-family': 'system-ui, sans-serif', 'font-size': 12 }, kids);
-
-  const empty = () => svg(h('text', { x: width / 2, y: height / 2, 'text-anchor': 'middle', fill: 'currentColor', 'fill-opacity': 0.6 }, 'No data'));
-  if (!labels.length || !series.length) return empty();
-
-  const color = type === 'pie'
-    ? (i) => colors[i % colors.length]
-    : (i) => series[i].color ?? colors[i % colors.length];
-  const ctx = { labels, series, width, height, color };
-
-  const kids = type === 'pie' ? pieChart(ctx) : axisChart(type, ctx);
-  return kids ? svg(kids) : empty();
-}
-// Chart.jsx — React wrapper. Converts the core's tree into React elements.
-
-// 'stroke-width' -> 'strokeWidth' (aria-* and data-* stay as they are)
-const camel = (k) => (/^(aria|data)-/.test(k) ? k : k.replace(/-([a-z])/g, (_, c) => c.toUpperCase()));
-
-function toReact(node, key) {
-  if (typeof node === 'string') return node;
-  const props = key === undefined ? {} : { key };
-  for (const [k, v] of Object.entries(node.attrs)) props[camel(k)] = v;
-  return createElement(node.tag, props, node.children.map((c, i) => toReact(c, i)));
+function tooltip(active, width, height) {
+  const text = active.text;
+  const tooltipWidth = Math.min(width - 8, Math.max(110, text.length * 7.1 + 18));
+  const x = Math.min(Math.max(4, active.x - tooltipWidth / 2), width - tooltipWidth - 4);
+  const y = Math.min(Math.max(22, active.y - 14), height - 8);
+  return h('g', { role: 'tooltip', class: 'mc-tooltip', 'aria-hidden': 'true' },
+    h('rect', { x: r(x), y: r(y - 20), width: r(tooltipWidth), height: 24, rx: 4, fill: 'CanvasText', stroke: 'Canvas', 'stroke-width': 1 }),
+    h('text', { x: r(x + 9), y: r(y - 4), fill: 'Canvas', 'font-size': 12 }, text));
 }
 
-function Chart({ type, data, width, height, colors }) {
-  // Rebuild only when inputs change. Pass a stable `data` reference (or memoize it) to benefit.
-  const tree = useMemo(
-    () => buildChart({ type, data, width, height, colors }),
-    [type, data, width, height, colors]
-  );
-  return toReact(tree);
+function svgStyle() {
+  return h('style', {}, '.mc-gridline{vector-effect:non-scaling-stroke}.mc-focus-light,.mc-focus-dark,.mc-svg-focus-light,.mc-svg-focus-dark{vector-effect:non-scaling-stroke;pointer-events:none}.mc-svg-focus-light,.mc-svg-focus-dark{opacity:0}svg:focus-visible>.mc-svg-focus-light,svg:focus-visible>.mc-svg-focus-dark{opacity:1}.mc-point{cursor:pointer}.mc-tooltip{pointer-events:auto}.mc-axis-label,.mc-legend-label{font-size:12px}@media(forced-colors:active){.mc-gridline{stroke:CanvasText!important;stroke-opacity:.5!important}.mc-axis-label,.mc-legend-label{fill:CanvasText!important;opacity:1!important}.mc-focus-light,.mc-svg-focus-light{stroke:Canvas!important}.mc-focus-dark,.mc-svg-focus-dark{stroke:Highlight!important}.mc-pie-slice{stroke:Canvas!important}.mc-pattern-background{fill:Canvas!important;stroke:CanvasText!important}.mc-pattern-line{stroke:CanvasText!important}.mc-tooltip rect{fill:Canvas!important;stroke:CanvasText!important}.mc-tooltip text{fill:CanvasText!important}}');
 }
 
-// Usage:
-// <Chart type="line" data={{ labels: ['Jan','Feb','Mar'], series: [{ name: 'Sales', values: [3, 7, 5] }] }} />
+function emptySvg(options, titleId, descId, description) {
+  const { type, width, height } = options;
+  return h('svg', {
+    viewBox: `0 0 ${width} ${height}`, width: '100%', height,
+    role: 'img', 'aria-labelledby': titleId, 'aria-describedby': descId,
+    'font-family': 'system-ui, sans-serif', 'font-size': 12,
+    'data-chart-type': type, 'data-category-count': 0, 'data-series-count': 0,
+    'data-interactive': 'false',
+    tabindex: undefined,
+  },
+    svgStyle(),
+    h('title', { id: titleId }, 'No data'),
+    h('desc', { id: descId }, description),
+    h('text', { x: width / 2, y: height / 2, 'text-anchor': 'middle', fill: 'currentColor', class: 'mc-axis-label', role: 'status' }, 'No data'));
+}
 
-// ---- demo page ----
-const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'];
-const rnd = (lo, hi) => Math.round(lo + Math.random() * (hi - lo));
-const initial = {
-  labels: months,
+function buildSvg(options) {
+  const { type, data, width, height, colors, idPrefix, caption, interactive, activePoint } = options;
+  const labels = data.labels ?? [];
+  const series = data.series ?? [];
+  const titleId = `${idPrefix}-title`;
+  const descId = `${idPrefix}-description`;
+  const title = caption || titleFor(type, series);
+  const description = descriptionFor(type, data, options.description);
+  const color = (index) => colors[index % colors.length];
+  const hasData = labels.length > 0 && series.length > 0;
+  const pieTotal = (series[0]?.values ?? []).reduce((sum, value) => sum + (Number.isFinite(value) ? Math.max(0, value) : 0), 0);
+  if (!hasData || (type === 'pie' && !pieTotal)) return emptySvg(options, titleId, descId, description);
+  const kids = type === 'pie' ? pieChart(options, color) : axisChart(options, color, titleId, descId);
+  return h('svg', {
+    viewBox: `0 0 ${width} ${height}`, width: '100%', height,
+    role: interactive ? 'group' : 'img',
+    'aria-roledescription': interactive ? 'chart' : undefined,
+    'aria-labelledby': titleId, 'aria-describedby': descId,
+    'font-family': 'system-ui, sans-serif', 'font-size': 12,
+    'data-chart-type': type, 'data-category-count': labels.length,
+    'data-series-count': type === 'pie' ? 1 : series.length,
+    'data-interactive': interactive ? 'true' : 'false',
+    tabindex: interactive ? 0 : undefined,
+  },
+    svgStyle(),
+    h('title', { id: titleId }, title),
+    h('desc', { id: descId }, description),
+    kids,
+    interactive ? [
+      h('rect', { x: 3, y: 3, width: Math.max(1, width - 6), height: Math.max(1, height - 6), fill: 'none', stroke: '#fff', 'stroke-width': 6, class: 'mc-svg-focus-light', 'aria-hidden': 'true' }),
+      h('rect', { x: 3, y: 3, width: Math.max(1, width - 6), height: Math.max(1, height - 6), fill: 'none', stroke: '#000', 'stroke-width': 2.5, class: 'mc-svg-focus-dark', 'aria-hidden': 'true' }),
+    ] : []);
+}
+
+function pointMessage(options, activePoint) {
+  if (!activePoint || !options.interactive || options.type === undefined) return '';
+  const { data, type } = options;
+  if (type === 'pie') {
+    const label = data.labels?.[activePoint.category];
+    const value = data.series?.[0]?.values?.[activePoint.category];
+    const values = (data.series?.[0]?.values ?? []).map((n) => Number.isFinite(n) ? Math.max(0, n) : 0);
+    const total = values.reduce((sum, n) => sum + n, 0);
+    if (label == null || !Number.isFinite(value) || !total || value <= 0) return '';
+    return `${label}: ${format(value)}, ${(value / total * 100).toFixed(1).replace(/\.0$/, '')}%`;
+  }
+  const item = data.series?.[activePoint.series];
+  const label = data.labels?.[activePoint.category];
+  const value = item?.values?.[activePoint.category];
+  if (!item || label == null || !Number.isFinite(value)) return '';
+  return `${item.name || `Series ${activePoint.series + 1}`}, ${label}: ${format(value)}`;
+}
+
+function tableTree(options, title) {
+  if (options.table === 'none') return null;
+  const { type, data, idPrefix, caption } = options;
+  const labels = data.labels ?? [];
+  const series = data.series ?? [];
+  const pie = type === 'pie';
+  const tableCaption = caption ? `${caption} data` : `Data for ${title}`;
+  const headers = pie
+    ? ['Label', 'Value', 'Percentage']
+    : ['Category', ...series.map((item, index) => item.name ?? `Series ${index + 1}`)];
+  const head = h('thead', {}, h('tr', {}, headers.map((label) => h('th', { scope: 'col' }, label))));
+  let bodyRows;
+  if (pie) {
+    const values = series[0]?.values ?? [];
+    const total = values.reduce((sum, value) => sum + (Number.isFinite(value) ? Math.max(0, value) : 0), 0);
+    bodyRows = labels.map((label, index) => {
+      const value = values[index];
+      const numeric = Number.isFinite(value) ? Math.max(0, value) : 0;
+      const percentage = total && Number.isFinite(value) ? `${(numeric / total * 100).toFixed(1).replace(/\.0$/, '')}%` : '';
+      return h('tr', {},
+        h('th', { scope: 'row' }, String(label)),
+        h('td', {}, format(value)),
+        h('td', {}, percentage));
+    });
+  } else {
+    bodyRows = labels.map((label, categoryIndex) => h('tr', {},
+      h('th', { scope: 'row' }, String(label)),
+      ...series.map((item) => h('td', {}, format(item.values?.[categoryIndex])))));
+  }
+  const tableStyle = options.table === 'hidden'
+    ? TABLE_HIDDEN_STYLE
+    : 'width:100%;table-layout:fixed;border-collapse:collapse;overflow-wrap:anywhere';
+  return h('table', { id: `${idPrefix}-table`, class: `mc-data-table mc-table-${options.table}`, style: tableStyle },
+    h('caption', {}, tableCaption), head, h('tbody', {}, bodyRows));
+}
+
+function buildChart(options = {}) {
+  const normalized = normalizeOptions(options);
+  return buildSvg(normalized);
+}
+
+function buildFigure(options = {}) {
+  const normalized = normalizeOptions(options);
+  const { caption, type, data, idPrefix, activePoint } = normalized;
+  const svg = buildSvg(normalized);
+  const title = caption || titleFor(type, data.series ?? []);
+  const captionId = `${idPrefix}-caption`;
+  const titleId = `${idPrefix}-title`;
+  const figureAttrs = {
+    id: `${idPrefix}-figure`,
+    class: 'mc-figure',
+    style: 'display:block;width:100%;max-width:100%;margin:0;box-sizing:border-box;position:relative',
+    'aria-labelledby': caption ? captionId : titleId,
+  };
+  const figureChildren = [svg];
+  if (caption) figureChildren.push(h('figcaption', { id: captionId }, caption));
+  if (normalized.interactive) figureChildren.push(h('span', {
+    id: `${idPrefix}-live`, class: 'mc-visually-hidden mc-live-region',
+    'aria-live': 'polite', 'aria-atomic': 'true',
+    style: 'position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0',
+  }, pointMessage(normalized, activePoint)));
+  const table = tableTree(normalized, title);
+  if (table) figureChildren.push(table);
+  return h('figure', figureAttrs, figureChildren);
+}
+
+function available(point, dims) {
+  return point.category >= 0 && point.category < dims.categories && point.series >= 0 && point.series < dims.series
+    && (!dims.validPoints || dims.validPoints[point.series]?.[point.category] === true);
+}
+
+function pointDimensions(type, data = { labels: [], series: [] }) {
+  const labels = data.labels ?? [];
+  const seriesData = data.series ?? [];
+  return {
+    categories: labels.length,
+    series: type === 'pie' ? Math.min(1, seriesData.length) : seriesData.length,
+    pie: type === 'pie',
+    validPoints: seriesData.map((item) => labels.map((_, index) => {
+      const value = item.values?.[index];
+      return typeof value === 'number' && Number.isFinite(value) && (type !== 'pie' || value > 0);
+    })),
+  };
+}
+
+function clampPoint(point, dims) {
+  if (!point || dims.categories <= 0 || dims.series <= 0) return null;
+  const clamped = {
+    category: Math.max(0, Math.min(dims.categories - 1, point.category)),
+    series: dims.pie ? 0 : Math.max(0, Math.min(dims.series - 1, point.series)),
+  };
+  if (available(clamped, dims)) return clamped;
+  for (let offset = 1; offset < dims.categories * dims.series; offset++) {
+    for (const candidate of [
+      { category: clamped.category, series: clamped.series + offset },
+      { category: clamped.category, series: clamped.series - offset },
+      { category: clamped.category + offset, series: clamped.series },
+      { category: clamped.category - offset, series: clamped.series },
+    ]) {
+      if (dims.pie) candidate.series = 0;
+      if (available(candidate, dims)) return candidate;
+    }
+  }
+  return null;
+}
+
+function nextPoint(state, key, dims) {
+  const { categories, series, pie = false } = dims;
+  if (key === 'Escape') return null;
+  if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(key)) return undefined;
+  if (categories <= 0 || series <= 0) return null;
+  const current = clampPoint(state, dims);
+  if (!current) {
+    const initial = key === 'ArrowLeft' || key === 'End'
+      ? { category: categories - 1, series: 0 }
+      : { category: 0, series: 0 };
+    return clampPoint(initial, dims);
+  }
+  const direction = key === 'ArrowLeft' || key === 'ArrowUp' ? -1 : 1;
+  if (pie) {
+    if (key === 'Home') return clampPoint({ category: 0, series: 0 }, dims);
+    if (key === 'End') return clampPoint({ category: categories - 1, series: 0 }, dims);
+    const step = key === 'ArrowLeft' || key === 'ArrowUp' ? -1 : 1;
+    for (let offset = 1; offset <= categories; offset++) {
+      const candidate = { category: (current.category + step * offset + categories) % categories, series: 0 };
+      if (available(candidate, dims)) return candidate;
+    }
+    return current;
+  }
+  if (key === 'Home' || key === 'End') {
+    const start = key === 'Home' ? 0 : categories - 1;
+    const step = key === 'Home' ? 1 : -1;
+    for (let category = start; category >= 0 && category < categories; category += step) {
+      const candidate = { category, series: current.series };
+      if (available(candidate, dims)) return candidate;
+    }
+    return current;
+  }
+  const changingCategory = key === 'ArrowLeft' || key === 'ArrowRight';
+  const length = changingCategory ? categories : series;
+  const base = changingCategory ? current.category : current.series;
+  for (let index = base + direction; index >= 0 && index < length; index += direction) {
+    const candidate = changingCategory
+      ? { category: index, series: current.series }
+      : { category: current.category, series: index };
+    if (available(candidate, dims)) return candidate;
+  }
+  return current;
+}
+
+function camel(key) {
+  if (/^(aria|data)-/.test(key)) return key;
+  if (key === "class") return "className";
+  return key.replace(/-([a-z])/g, (_, character) => character.toUpperCase());
+}
+function parseStyle(value) {
+  const style = {};
+  for (const declaration of value.split(";")) {
+    const separator = declaration.indexOf(":");
+    if (separator < 0) continue;
+    const rawName = declaration.slice(0, separator).trim();
+    const rawValue = declaration.slice(separator + 1).trim();
+    if (!rawName || !rawValue) continue;
+    const name = rawName.startsWith("--") ? rawName : rawName.replace(/-([a-z])/g, (_, character) => character.toUpperCase());
+    style[name] = rawValue;
+  }
+  return style;
+}
+function pointFromEvent(target) {
+  if (!(target instanceof Element)) return null;
+  const point = target.closest("[data-point-category][data-point-series]");
+  if (!point) return null;
+  return {
+    category: Number(point.getAttribute("data-point-category")),
+    series: Number(point.getAttribute("data-point-series"))
+  };
+}
+function clampActive(point, type, data) {
+  if (!point) return null;
+  const dims = pointDimensions(type, data);
+  const clamped = clampPoint(point, dims);
+  if (clamped) return clamped;
+  return nextPoint(null, "ArrowRight", dims) ?? null;
+}
+function toReact(node, key, figureRef, handlers) {
+  if (typeof node === "string") return node;
+  const props = key === void 0 ? {} : { key };
+  for (const [name, value] of Object.entries(node.attrs)) {
+    if (value === void 0 || value === null) continue;
+    props[camel(name)] = name === "style" && typeof value === "string" ? parseStyle(value) : value;
+  }
+  if (node.tag === "figure") props.ref = figureRef;
+  if (node.tag === "svg") {
+    props.onKeyDown = handlers.onKeyDown;
+    props.onPointerMove = handlers.onPointerMove;
+    props.onPointerDown = handlers.onPointerDown;
+  }
+  return createElement(node.tag, props, ...node.children.map((child, index) => toReact(child, index, figureRef, handlers)));
+}
+function Chart({
+  type = "bar",
+  data = { labels: [], series: [] },
+  width = 480,
+  height = 300,
+  colors,
+  caption,
+  description,
+  table = "hidden",
+  interactive = true,
+  idPrefix: requestedIdPrefix
+}) {
+  const reactId = useId();
+  const uniqueId = reactId.replace(/[^A-Za-z0-9_-]/g, "");
+  const idPrefix = requestedIdPrefix ? `${requestedIdPrefix}-${uniqueId}` : `mini-chart-${uniqueId}`;
+  const figureRef = useRef(null);
+  const [observedWidth, setObservedWidth] = useState(0);
+  const [activePoint, setActivePoint] = useState(null);
+  const actualWidth = observedWidth || width;
+  const options = {
+    type,
+    data,
+    width: actualWidth,
+    height,
+    colors,
+    caption,
+    description,
+    table,
+    interactive,
+    idPrefix,
+    activePoint
+  };
+  const tree = useMemo(() => buildFigure(options), [type, data, actualWidth, height, colors, caption, description, table, interactive, idPrefix, activePoint]);
+  useEffect(() => {
+    const figure = figureRef.current;
+    if (!figure || typeof ResizeObserver === "undefined") return void 0;
+    const updateWidth = () => {
+      const nextWidth = Math.round(figure.getBoundingClientRect().width);
+      if (nextWidth > 0) setObservedWidth((previous) => previous === nextWidth ? previous : nextWidth);
+    };
+    updateWidth();
+    const observer = new ResizeObserver(updateWidth);
+    observer.observe(figure);
+    return () => observer.disconnect();
+  }, []);
+  useEffect(() => {
+    setActivePoint((point) => clampActive(point, type, data));
+  }, [type, data]);
+  const handlers = {
+    onKeyDown(event) {
+      if (!interactive) return;
+      const next = nextPoint(activePoint, event.key, pointDimensions(type, data));
+      if (next === void 0) return;
+      event.preventDefault();
+      setActivePoint(next);
+    },
+    onPointerMove(event) {
+      if (!interactive) return;
+      const point = pointFromEvent(event.target);
+      if (point) setActivePoint(point);
+    },
+    onPointerDown(event) {
+      if (!interactive) return;
+      const point = pointFromEvent(event.target);
+      if (point) setActivePoint(point);
+    }
+  };
+  return toReact(tree, void 0, figureRef, handlers);
+}
+{
+  Chart
+};
+
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'];
+const random = (min, max) => Math.round(min + Math.random() * (max - min));
+const initialData = {
+  labels: MONTHS,
   series: [
-    { name: 'Visitors', values: [62, 70, 55, 84, 91, 78] },
-    { name: 'Signups', values: [12, 18, 14, 30, 35, 27] },
+    { name: 'Revenue', values: [62, 70, 55, 84, 91, 78] },
+    { name: 'Costs', values: [12, 18, 14, 30, 35, 27] },
   ],
 };
 const randomData = () => ({
-  labels: months,
+  labels: MONTHS,
   series: [
-    { name: 'Visitors', values: months.map(() => rnd(40, 100)) },
-    { name: 'Signups', values: months.map(() => rnd(5, 45)) },
+    { name: 'Revenue', values: MONTHS.map(() => random(40, 100)) },
+    { name: 'Costs', values: MONTHS.map(() => random(5, 45)) },
   ],
 });
 
 export default function Page() {
   const [type, setType] = useState('bar');
-  const [data, setData] = useState(initial); // fixed start value avoids a hydration mismatch
+  const [data, setData] = useState(initialData);
+  const [table, setTable] = useState('hidden');
+  const description = 'Monthly revenue and costs across the selected period.';
 
   return (
-    <main style={{ maxWidth: 640, margin: '0 auto', padding: 24, fontFamily: 'system-ui, sans-serif' }}>
+    <main style={{ maxWidth: 720, width: '100%', boxSizing: 'border-box', margin: '0 auto', padding: 24, fontFamily: 'system-ui, sans-serif' }}>
       <h1>mini-chart in React</h1>
+      <p>Focus the chart and use arrow keys, Home, End, or Escape. The tooltip is also available by hover or touch.</p>
       <div style={{ display: 'flex', gap: 8, margin: '16px 0', flexWrap: 'wrap' }}>
-        {['bar', 'line', 'pie'].map((t) => (
-          <button key={t} aria-pressed={type === t} onClick={() => setType(t)}
-            style={{ padding: '6px 14px', fontWeight: type === t ? 700 : 400 }}>{t}</button>
+        {['bar', 'line', 'pie'].map((chartType) => (
+          <button key={chartType} aria-pressed={type === chartType} onClick={() => setType(chartType)}>{chartType}</button>
         ))}
-        <button onClick={() => setData(randomData())} style={{ padding: '6px 14px' }}>Randomize</button>
+        <button onClick={() => setTable((mode) => mode === 'hidden' ? 'visible' : mode === 'visible' ? 'none' : 'hidden')}>Table mode: {table}</button>
+        <button onClick={() => setData(randomData())}>Randomize</button>
       </div>
-      <Chart type={type} data={data} />
-      {type === 'pie' && <p style={{ opacity: 0.7 }}>Pie charts use the first series only.</p>}
+      <Chart type={type} data={data} caption={type === 'pie' ? 'Revenue and costs' : 'Monthly revenue and costs'} description={description} table={table} interactive />
     </main>
   );
 }
