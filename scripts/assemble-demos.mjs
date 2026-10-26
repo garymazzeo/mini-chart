@@ -14,10 +14,18 @@ const webDemoScript = `
 const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'];
 const random = (min, max) => Math.round(min + Math.random() * (max - min));
 const bar = document.querySelector('#revenue');
+const horizontal = document.querySelector('#regions');
 const line = document.querySelector('#visitors');
 const pie = document.querySelector('#sources');
 function updateData() {
   bar.data = { labels: months, series: [{ name: 'Revenue', values: months.map(() => random(20, 90)) }] };
+  horizontal.data = {
+    labels: ['North', 'South', 'East', 'West'],
+    series: [
+      { name: 'Revenue', values: ['North', 'South', 'East', 'West'].map(() => random(30, 95)) },
+      { name: 'Costs', values: ['North', 'South', 'East', 'West'].map(() => random(10, 45)) },
+    ],
+  };
   line.data = { labels: months, series: [
     { name: 'Visitors', values: months.map(() => random(40, 100)) },
     { name: 'Signups', values: months.map(() => random(5, 45)) },
@@ -50,9 +58,10 @@ const webHtml = `<!doctype html>
 <body>
   <main>
     <h1>mini-chart</h1>
-    <p class="instructions">Focus an interactive chart and use Left/Right to move through categories, Up/Down to change series, Home/End to jump to a boundary, and Escape to dismiss the tooltip. You can also hover or tap a data point. Each chart demonstrates a different table mode: visible, screen-reader-only, or omitted in favor of a description.</p>
+    <p class="instructions">Focus an interactive chart and use Left/Right to move through categories, Up/Down to change series, Home/End to jump to a boundary, and Escape to dismiss the tooltip. You can also hover or tap a data point. The revenue examples include vertical and horizontal bars. The charts demonstrate visible, screen-reader-only, and omitted data tables.</p>
     <div class="grid">
       <section><h2>Revenue (visible table)</h2><mini-chart id="revenue" type="bar" caption="Monthly revenue" table="visible"></mini-chart></section>
+      <section><h2>Revenue by region (horizontal bars)</h2><mini-chart id="regions" type="horizontal-bar" caption="Revenue by region" description="Revenue and costs for each region." table="hidden"></mini-chart></section>
       <section><h2>Visitors (hidden table)</h2><mini-chart id="visitors" type="line" caption="Visitors and signups" description="Monthly visitor and signup counts for six months." table="hidden"></mini-chart></section>
       <section><h2>Traffic (description instead of table)</h2><mini-chart id="sources" type="pie" caption="Traffic sources" description="Share of visits from search, direct, social, and email sources." table="none"></mini-chart></section>
     </div>
@@ -108,13 +117,13 @@ export default function Page() {
       <h1>mini-chart in React</h1>
       <p>Focus the chart and use arrow keys, Home, End, or Escape. The tooltip is also available by hover or touch.</p>
       <div style={{ display: 'flex', gap: 8, margin: '16px 0', flexWrap: 'wrap' }}>
-        {['bar', 'line', 'pie'].map((chartType) => (
+        {['bar', 'horizontal-bar', 'line', 'pie'].map((chartType) => (
           <button key={chartType} aria-pressed={type === chartType} onClick={() => setType(chartType)}>{chartType}</button>
         ))}
         <button onClick={() => setTable((mode) => mode === 'hidden' ? 'visible' : mode === 'visible' ? 'none' : 'hidden')}>Table mode: {table}</button>
         <button onClick={() => setData(randomData())}>Randomize</button>
       </div>
-      <Chart type={type} data={data} caption={type === 'pie' ? 'Revenue and costs' : 'Monthly revenue and costs'} description={description} table={table} interactive />
+      <Chart type={type} data={data} caption={type === 'pie' ? 'Revenue and costs' : type === 'horizontal-bar' ? 'Revenue by month' : 'Monthly revenue and costs'} description={description} table={table} interactive />
     </main>
   );
 }

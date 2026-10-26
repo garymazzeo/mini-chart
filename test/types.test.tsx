@@ -1,7 +1,7 @@
 import { Chart, type ChartProps } from '../MiniChart';
 
 const chartOptions: ChartProps = {
-  type: 'bar',
+  type: 'horizontal-bar',
   data: { labels: ['Jan'], series: [{ values: [3] }] },
   idPrefix: 'revenue-chart',
 };

@@ -1,4 +1,4 @@
-export type ChartType = 'bar' | 'line' | 'pie';
+export type ChartType = 'bar' | 'horizontal-bar' | 'line' | 'pie';
 export type TableMode = 'hidden' | 'visible' | 'none';
 
 export interface ChartSeries {

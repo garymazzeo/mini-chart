@@ -20,6 +20,7 @@ function Fixture() {
   return <>
     <Chart idPrefix="shared-requested-prefix" type="bar" data={data} caption="Monthly revenue" table="visible" interactive />
     <Chart idPrefix="shared-requested-prefix" type="line" data={initialData} caption="React visitors" description="Two named series across three months." table="hidden" interactive={false} />
+    <Chart idPrefix="shared-requested-prefix" type="horizontal-bar" data={initialData} caption="React revenue by month" description="Revenue and costs by month, shown as horizontal bars." table="hidden" interactive={false} />
     <Chart type="pie" data={pieData} caption="React sources" description="Traffic source proportions." table="none" interactive={false} />
   </>;
 }

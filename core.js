@@ -20,7 +20,7 @@ const format = (value) => Number.isFinite(value) ? String(value) : '';
 function normalizeOptions(options = {}) {
   const type = options.type ?? 'bar';
   const table = options.table ?? 'hidden';
-  if (!['bar', 'line', 'pie'].includes(type)) throw new TypeError(`Unknown chart type: ${type}`);
+  if (!['bar', 'horizontal-bar', 'line', 'pie'].includes(type)) throw new TypeError(`Unknown chart type: ${type}`);
   if (!['hidden', 'visible', 'none'].includes(table)) throw new TypeError(`Unknown table mode: ${table}`);
   if (table === 'none' && !String(options.description ?? '').trim()) {
     throw new TypeError('A description is required when table is "none".');
@@ -40,7 +40,7 @@ function normalizeOptions(options = {}) {
 
 function titleFor(type, series) {
   const names = series.map((item, index) => item.name || `Series ${index + 1}`);
-  const label = type === 'pie' ? 'Pie' : type === 'line' ? 'Line' : 'Bar';
+  const label = type === 'pie' ? 'Pie' : type === 'line' ? 'Line' : type === 'horizontal-bar' ? 'Horizontal bar' : 'Bar';
   return `${label} chart${names.length ? ` of ${names.join(', ')}` : ''}`;
 }
 
@@ -203,6 +203,85 @@ function axisChart(options, color, titleId, descId) {
   return out;
 }
 
+function horizontalBarChart(options, color) {
+  const { data, width, height, idPrefix, activePoint, interactive } = options;
+  const labels = data.labels ?? [];
+  const series = data.series ?? [];
+  const hasLegend = series.length > 1;
+  const columns = Math.max(1, Math.floor((width - 20) / 132));
+  const legendRows = hasLegend ? Math.ceil(series.length / columns) : 0;
+  const longestLabel = labels.reduce((widest, label) => Math.max(widest, String(label).length * 7.2), 0);
+  const margins = {
+    top: 24,
+    right: 12,
+    bottom: 32 + legendRows * 18,
+    left: Math.min(width * 0.48, Math.max(56, longestLabel + 16)),
+  };
+  const innerWidth = Math.max(1, width - margins.left - margins.right);
+  const innerHeight = Math.max(1, height - margins.top - margins.bottom);
+  const values = series.flatMap((item) => item.values ?? []).filter(Number.isFinite);
+  const low = Math.min(0, ...(values.length ? values : [0]));
+  const high = Math.max(0, ...(values.length ? values : [1]));
+  const ticks = niceTicks(low, high);
+  const x = linear(ticks[0], ticks[ticks.length - 1], margins.left, margins.left + innerWidth);
+  const band = innerHeight / Math.max(1, labels.length);
+  const centerY = (index) => margins.top + band * (index + 0.5);
+  const colorAt = (index) => series[index]?.color ?? color(index);
+  const out = [patternDefs(idPrefix, series, colorAt)];
+
+  for (const tick of ticks) {
+    out.push(
+      h('line', { x1: r(x(tick)), x2: r(x(tick)), y1: margins.top, y2: margins.top + innerHeight, stroke: 'currentColor', 'stroke-opacity': 0.22, class: 'mc-gridline', 'aria-hidden': 'true' }),
+      h('text', { x: r(x(tick)), y: margins.top + innerHeight + 18, 'text-anchor': 'middle', fill: 'currentColor', class: 'mc-axis-label' }, String(tick)));
+  }
+
+  const labelStep = Math.max(1, Math.ceil(22 / Math.max(1, band)));
+  labels.forEach((label, index) => {
+    if (index % labelStep !== 0) return;
+    out.push(h('text', { x: margins.left - 8, y: r(centerY(index)), 'text-anchor': 'end', 'dominant-baseline': 'middle', fill: 'currentColor', class: 'mc-axis-label' }, String(label)));
+  });
+
+  const pointPositions = new Map();
+  series.forEach((item, seriesIndex) => {
+    const seriesColor = colorAt(seriesIndex);
+    const barHeight = Math.max(1, (band * 0.8) / Math.max(1, series.length));
+    (item.values ?? []).forEach((value, categoryIndex) => {
+      if (!Number.isFinite(value) || categoryIndex >= labels.length) return;
+      const y = centerY(categoryIndex) - band * 0.4 + seriesIndex * barHeight;
+      const zeroX = x(0);
+      const valueX = x(value);
+      const barX = Math.min(zeroX, valueX);
+      const barWidth = Math.max(1, Math.abs(valueX - zeroX));
+      const active = activePoint?.series === seriesIndex && activePoint?.category === categoryIndex;
+      pointPositions.set(`${seriesIndex}:${categoryIndex}`, {
+        x: valueX,
+        y: y + barHeight / 2,
+        size: 8,
+        text: `${item.name || `Series ${seriesIndex + 1}`}, ${labels[categoryIndex]}: ${value}`,
+      });
+      const bar = h('rect', {
+        x: r(barX), y: r(y), width: r(barWidth), height: r(Math.max(barHeight - 1, 1)),
+        fill: seriesIndex > 1 ? `url(#${idPrefix}-pattern-${seriesIndex})` : seriesColor,
+        class: 'mc-bar',
+      });
+      const ring = active ? [
+        h('rect', { x: r(barX - 3), y: r(y - 3), width: r(barWidth + 6), height: r(barHeight + 5), fill: 'none', stroke: '#fff', 'stroke-width': 6, class: 'mc-focus-light', 'aria-hidden': 'true' }),
+        h('rect', { x: r(barX - 3), y: r(y - 3), width: r(barWidth + 6), height: r(barHeight + 5), fill: 'none', stroke: '#000', 'stroke-width': 2.5, class: 'mc-focus-dark', 'aria-hidden': 'true' }),
+      ] : [];
+      out.push(h('g', { 'data-point-category': categoryIndex, 'data-point-series': seriesIndex, class: 'mc-point', 'aria-hidden': 'true' }, bar, ring));
+    });
+  });
+
+  if (hasLegend) {
+    const entries = series.map((item, index) => ({ name: item.name ?? `Series ${index + 1}`, color: colorAt(index), marker: MARKERS[index % MARKERS.length] }));
+    out.push(...legend(entries, width, height - legendRows * 18 + 4).nodes);
+  }
+
+  const active = activePoint && pointPositions.get(`${activePoint.series}:${activePoint.category}`);
+  if (interactive && active) out.push(tooltip(active, width, height));
+  return out;
+}
+
 function pieChart(options, color) {
   const { data, width, height, idPrefix, activePoint, interactive } = options;
   const labels = data.labels ?? [];
@@ -292,7 +371,11 @@ function buildSvg(options) {
   const hasData = labels.length > 0 && series.length > 0;
   const pieTotal = (series[0]?.values ?? []).reduce((sum, value) => sum + (Number.isFinite(value) ? Math.max(0, value) : 0), 0);
   if (!hasData || (type === 'pie' && !pieTotal)) return emptySvg(options, titleId, descId, description);
-  const kids = type === 'pie' ? pieChart(options, color) : axisChart(options, color, titleId, descId);
+  const kids = type === 'pie'
+    ? pieChart(options, color)
+    : type === 'horizontal-bar'
+      ? horizontalBarChart(options, color)
+      : axisChart(options, color, titleId, descId);
   return h('svg', {
     viewBox: `0 0 ${width} ${height}`, width: '100%', height,
     role: interactive ? 'group' : 'img',

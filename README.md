@@ -103,6 +103,7 @@ For the custom element, `caption`, `description`, `table`, and `interactive` are
 ### Chart types
 
 - `bar` — grouped bars; supports multiple series
+- `horizontal-bar` — grouped bars laid out horizontally; supports multiple series
 - `line` — lines with point markers; supports multiple series
 - `pie` — slices from the first series only
 
@@ -116,7 +117,7 @@ With Node.js and npm installed, run this from the repository root to start a tem
 npx --yes http-server . -p 8000
 ```
 
-Then visit <http://localhost:8000/demo.html>. The demo shows all three chart types and table modes, plus keyboard instructions and a randomize button. `docs/index.html` is generated from the same sources for static hosting.
+Then visit <http://localhost:8000/demo.html>. The demo shows all four chart variants and table modes, plus keyboard instructions and a randomize button. `docs/index.html` is generated from the same sources for static hosting.
 
 ## Development
 

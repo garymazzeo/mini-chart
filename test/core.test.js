@@ -133,6 +133,25 @@ test('series use non-hue cues and pie slices have theme-aware separators', () =>
   assert.ok(nodes(pie, 'path').filter((node) => attr(node, 'class') === 'mc-pie-slice').every((node) => attr(node, 'stroke') === 'Canvas' && attr(node, 'stroke-width') === 2));
 });
 
+test('horizontal-bar draws grouped bars across values and categories down the axis', () => {
+  const chart = buildChart({
+    type: 'horizontal-bar',
+    data: {
+      labels: ['North', 'South'],
+      series: [{ name: 'Revenue', values: [40, 80] }, { name: 'Costs', values: [20, 30] }],
+    },
+  });
+  const bars = nodes(chart, 'rect').filter((node) => attr(node, 'class') === 'mc-bar');
+  const north = nodes(chart, 'text').find((node) => text(node) === 'North');
+  const south = nodes(chart, 'text').find((node) => text(node) === 'South');
+  assert.equal(attr(chart, 'data-chart-type'), 'horizontal-bar');
+  assert.equal(attr(chart, 'role'), 'group');
+  assert.equal(bars.length, 4);
+  assert.ok(Number(attr(bars[0], 'width')) > Number(attr(bars[0], 'height')));
+  assert.ok(Number(attr(north, 'y')) < Number(attr(south, 'y')));
+  assert.equal(attr(north, 'text-anchor'), 'end');
+});
+
 test('every default series color meets 3:1 on light and dark backgrounds', () => {
   assert.ok(PALETTE.length >= 3);
   for (const color of PALETTE) {

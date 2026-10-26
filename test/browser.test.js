@@ -57,6 +57,7 @@ test('web and React renderers meet accessibility and interaction requirements', 
         <mini-chart id="web-bar" type="bar" caption="Monthly revenue" table="visible" aria-label="Fallback label"></mini-chart>
         <mini-chart id="web-line" type="line" caption="Monthly visitors" description="Visitor and signup counts for each month."></mini-chart>
         <mini-chart id="web-pie" type="pie" caption="Traffic sources" description="Share of visits from each source." table="none"></mini-chart>
+        <mini-chart id="web-horizontal" type="horizontal-bar" caption="Revenue by region" description="Regional revenue and costs." table="hidden"></mini-chart>
         <mini-chart id="host-label" type="bar" aria-label="Revenue chart name" interactive="false"></mini-chart>
         <span id="outside-name">Chart labelled from outside</span><mini-chart id="host-labelledby" type="bar" aria-labelledby="outside-name" interactive="false"></mini-chart>
         <section id="react-fixture"></section>
@@ -73,13 +74,14 @@ test('web and React renderers meet accessibility and interaction requirements', 
         series: [{ name: 'Revenue', values: [20, 40, 90] }, { name: 'Costs', values: [6, 4, 12] }],
       };
       document.querySelector('#web-bar').data = data;
+      document.querySelector('#web-horizontal').data = { labels: ['North', 'South', 'East'], series: data.series };
       document.querySelector('#web-line').data = data;
       document.querySelector('#host-label').data = data;
       document.querySelector('#host-labelledby').data = data;
       document.querySelector('#web-pie').data = { labels: ['Search', 'Direct', 'Social'], series: [{ values: [46, 34, 20] }] };
     });
     await page.addScriptTag({ content: reactBundle });
-    await page.waitForFunction(() => document.querySelectorAll('#react-fixture figure').length === 3
+    await page.waitForFunction(() => document.querySelectorAll('#react-fixture figure').length === 4
       && [...document.querySelectorAll('mini-chart')].every((element) => element.shadowRoot.querySelector('figure')));
     await page.addScriptTag({ path: axePath });
 
@@ -128,11 +130,11 @@ test('web and React renderers meet accessibility and interaction requirements', 
       assert.equal(check.localLabelText, 'Chart labelled from outside');
       assert.equal(check.captionWins, true);
       assert.equal(check.requestedPrefixApplied, true);
-      for (const type of ['bar', 'line', 'pie']) {
+      for (const type of ['bar', 'horizontal-bar', 'line', 'pie']) {
         assert.ok(check.modeMatrix.some(([chartType, interactive]) => chartType === type && interactive === 'true'));
         assert.ok(check.modeMatrix.some(([chartType, interactive]) => chartType === type && interactive === 'false'));
       }
-      assert.equal(await page.locator('mini-chart svg[tabindex="0"]').count(), 3);
+      assert.equal(await page.locator('mini-chart svg[tabindex="0"]').count(), 4);
       assert.equal(await page.locator('#react-fixture svg[tabindex="0"]').count(), 1);
     });
 
@@ -244,10 +246,11 @@ test('web and React renderers meet accessibility and interaction requirements', 
       demoPage.on('pageerror', (error) => pageErrors.push(error.message));
       try {
         await demoPage.goto(pathToFileURL(resolve(root, 'demo.html')).href);
-        await demoPage.waitForFunction(() => ['revenue', 'visitors', 'sources'].every((id) => document.querySelector(`#${id}`)?.shadowRoot?.querySelector('svg')));
+        await demoPage.waitForFunction(() => ['revenue', 'regions', 'visitors', 'sources'].every((id) => document.querySelector(`#${id}`)?.shadowRoot?.querySelector('svg')));
         assert.equal(await demoPage.locator('#revenue').locator('table').count(), 1);
         assert.match(await demoPage.locator('#visitors').locator('table').getAttribute('style'), /clip/);
         assert.equal(await demoPage.locator('#sources').locator('table').count(), 0);
+        assert.equal(await demoPage.locator('#regions').locator('svg').getAttribute('data-chart-type'), 'horizontal-bar');
         assert.equal(await demoPage.locator('#revenue').locator('figcaption').textContent(), 'Monthly revenue');
         await demoPage.locator('#randomize').click();
         assert.deepEqual(pageErrors, []);
@@ -271,6 +274,8 @@ test('web and React renderers meet accessibility and interaction requirements', 
         assert.ok(await reactDemoPage.locator('#app figure svg desc').textContent());
         await reactDemoPage.getByRole('button', { name: 'pie' }).click();
         assert.equal(await reactDemoPage.locator('#app figure svg').getAttribute('data-chart-type'), 'pie');
+        await reactDemoPage.getByRole('button', { name: 'horizontal-bar' }).click();
+        assert.equal(await reactDemoPage.locator('#app figure svg').getAttribute('data-chart-type'), 'horizontal-bar');
         await reactDemoPage.setViewportSize({ width: 320, height: 900 });
         await reactDemoPage.waitForTimeout(100);
         const reflow = await reactDemoPage.evaluate(() => ({
