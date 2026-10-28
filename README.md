@@ -4,8 +4,8 @@ A tiny JavaScript charting library for bar, line, and pie charts. It renders SVG
 
 ## Features
 
-- Bar, line, and pie charts rendered as SVG
-- Multiple data series for bar and line charts
+- Vertical bar, horizontal bar, line, and pie charts rendered as SVG
+- Multiple data series for bar, horizontal-bar, and line charts
 - Accessible SVG output with an image role and label
 - Browser `<mini-chart>` custom element
 - React `<Chart>` component
@@ -35,7 +35,7 @@ const data = {
 };
 ```
 
-Each series may include an optional `name` and `values` array. `labels` and each series' `values` should have corresponding entries. An optional `color` on a series sets its color in bar and line charts. If labels or series are missing or empty, the chart displays “No data.” Pie charts use only the first series; its values should correspond to the labels.
+Each series may include an optional `name`, `values` array, and `color`. `labels` and each series' `values` should have corresponding entries. An optional `color` on a series sets its color in bar and line charts. If labels or series are missing or empty, the chart displays “No data.” Pie charts use only the first series; its values should correspond to the labels.
 
 ## How to use
 
@@ -66,7 +66,7 @@ The element also accepts JSON data through a `data` attribute:
 ></mini-chart>
 ```
 
-Supported element attributes are `type`, `width`, `height`, `data`, `caption`, `description`, `table`, and `interactive`. The default type is `bar`; the default chart dimensions are 480 by 300. `interactive="false"` disables keyboard/tooltip interaction. The element renders inside a shadow root.
+Supported element attributes are `type`, `width`, `height`, `font-size`, `data`, `caption`, `description`, `table`, and `interactive`. The default type is `bar`; the default chart dimensions are 480 by 300 and the default text size is 12px. `interactive="false"` disables keyboard/tooltip interaction. The element renders inside a shadow root.
 
 ### React
 
@@ -92,13 +92,109 @@ export function SalesChart() {
 }
 ```
 
-`Chart` accepts `type`, `data`, `width`, `height`, `colors`, `caption`, `description`, `table`, `interactive`, and optional `idPrefix` props. React's `useId()` is appended to `idPrefix` so IDs remain unique per instance. Defaults are `type="bar"`, `width={480}`, `height={300}`, `table="hidden"`, and `interactive`. `table` can be `hidden`, `visible`, or `none`; `none` requires a non-empty `description`. Keep the `data` object reference stable between renders (or memoize it) to benefit from the component's memoization.
+`Chart` accepts `type`, `data`, `width`, `height`, `fontSize`, `colors`, `caption`, `description`, `table`, `interactive`, optional `idPrefix`, and `injectStyles` props. React's `useId()` is appended to `idPrefix` so IDs remain unique per instance. Defaults are `type="bar"`, `width={480}`, `height={300}`, `fontSize={12}`, `table="hidden"`, `interactive`, and `injectStyles`. `table` can be `hidden`, `visible`, or `none`; `none` requires a non-empty `description`. Keep the `data` object reference stable between renders (or memoize it) to benefit from the component's memoization.
+
+For a single stylesheet per page, import `chartCss` from `core.js`, render it once, then opt out of per-chart injection:
+
+```jsx
+import { chartCss } from './core.js';
+
+function App() {
+  return <>
+    <style>{chartCss}</style>
+    <Chart data={data} injectStyles={false} />
+  </>;
+}
+```
 
 ### Accessibility options
 
 Both wrappers render a `<figure>` with a visible caption when supplied, accessible SVG title/description, and a semantic data table. The default visually clipped table remains in the accessibility tree. In interactive mode, focus the chart SVG and use the arrow keys to explore data, Home/End to move to category boundaries, and Escape to dismiss the tooltip. The table remains available as a complete text alternative.
 
 For the custom element, `caption`, `description`, `table`, and `interactive` are HTML attributes. The `caption` attribute takes precedence over host `aria-label`/`aria-labelledby`; without a caption those host names are forwarded to the figure.
+
+## Styling
+
+The wrappers inject `chartCss` from `core.js` by default. All selectors are scoped under `.mc-chart`; custom properties inherit through the custom element's shadow root. Paint is CSS-driven, while chart geometry and `fontSize` remain JavaScript options.
+
+| Custom property | Default | Applies to |
+| --- | --- | --- |
+| `--mc-color-1` … `--mc-color-8` | `#0072b2`, `#d55e00`, `#009e73`, `#cc79a7`, `#a06100`, `#007f86`, `#8c6d31`, `#4c78a8` | Series fills/strokes, pie slices, legend swatches. Series N cycles through `((N - 1) % 8) + 1`. |
+| `--mc-text-color` | `currentColor` | Chart text |
+| `--mc-axis-text-color` | `var(--mc-text-color)` | Tick labels |
+| `--mc-font-family` | `system-ui, sans-serif` | Chart text |
+| `--mc-grid-color` | `currentColor` | Gridlines |
+| `--mc-grid-opacity` | `0.15` | Gridlines |
+| `--mc-grid-width` | `1` | Gridlines |
+| `--mc-grid-dash` | `none` | Gridlines; e.g. `4 4` |
+| `--mc-baseline-color` | `var(--mc-grid-color)` | Zero line |
+| `--mc-baseline-width` | `var(--mc-grid-width)` | Zero line |
+| `--mc-baseline-dash` | `var(--mc-grid-dash)` | Zero line |
+| `--mc-line-width` | `2` | Line series |
+| `--mc-point-radius` | `3.5px` | Circular line markers |
+| `--mc-bar-radius` | `0px` | Bar corners |
+| `--mc-surface` | `Canvas` | Pie separators and marker outlines |
+| `--mc-slice-gap` | `1.5px` | Pie separators |
+| `--mc-focus-color` | `currentColor` | Inner focus ring |
+| `--mc-focus-width` | `2px` | Focus ring |
+| `--mc-tooltip-bg` | `Canvas` | Tooltip background |
+| `--mc-tooltip-color` | `CanvasText` | Tooltip text |
+| `--mc-tooltip-border` | `currentColor` | Tooltip border |
+| `--mc-inactive-opacity` | `0.35` | Inactive series while exploring a point |
+
+### Examples
+
+Set a page-wide palette and text colors from `:root`:
+
+```css
+:root {
+  --mc-color-1: #005bbb;
+  --mc-color-2: #d55e00;
+  --mc-grid-color: #667788;
+  --mc-text-color: #17212b;
+}
+```
+
+Switch properties for dark mode without re-rendering charts:
+
+```css
+@media (prefers-color-scheme: dark) {
+  :root {
+    --mc-color-1: #56b4e9;
+    --mc-color-2: #e69f00;
+    --mc-text-color: CanvasText;
+    --mc-surface: Canvas;
+  }
+}
+```
+
+Use a dashed grid:
+
+```css
+:root { --mc-grid-dash: 4 4; }
+```
+
+Override one custom element only:
+
+```html
+<mini-chart type="bar" style="--mc-color-1: #0072b2"></mini-chart>
+```
+
+Data colors take precedence over CSS palette properties, which take precedence over built-in defaults. Both `series.color` and the `colors` option set data colors; CSS values (including `var()`) are kept in safe inline custom properties:
+
+```js
+const data = {
+  labels: ['Jan', 'Feb'],
+  series: [
+    { name: 'Revenue', values: [8, 12], color: 'var(--brand)' },
+    { name: 'Costs', values: [4, 6] },
+  ],
+};
+```
+
+**Invalid values:** avoid values such as `--mc-color-1: banana`. The built-in fallback nested in `var(--mc-color-1, #0072b2)` does not apply when the property is defined but invalid for `fill`; the resulting declaration becomes invalid at computed-value time and the mark falls back to `fill`'s initial value, not the declared fallback. CSS `@property` registration could validate it, but registration is ignored inside shadow roots, so mini-chart does not depend on it.
+
+If you serialize SVG outside the React/custom-element wrappers, include the exported `chartCss` stylesheet yourself. Contrast is the page author's responsibility when overriding defaults. In React, use `<Chart injectStyles={false} />` when the page has already loaded `chartCss` once.
 
 ### Chart types
 

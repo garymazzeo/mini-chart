@@ -13,6 +13,18 @@ const pieData = { labels: ['Search', 'Direct', 'Social'], series: [{ values: [46
 
 function Fixture() {
   const [data, setData] = useState(initialData);
+  window.__setReactColorData = () => setData({
+    labels: ['Jan', 'Feb', 'Mar'],
+    series: [
+      { name: 'Revenue', values: [20, 40, 90] },
+      { name: 'Costs', values: [6, 4, 12], color: 'var(--brand)' },
+    ],
+  });
+  window.__setReactPatternData = () => setData({
+    labels: ['A'],
+    series: Array.from({ length: 4 }, (_, index) => ({ name: `Series ${index + 1}`, values: [index + 1] })),
+  });
+  window.__restoreReactData = () => setData(initialData);
   window.__updateReactData = () => setData({
     labels: ['Apr'],
     series: [{ name: 'Revenue', values: [35] }, { name: 'Costs', values: [9] }],
