@@ -35,7 +35,7 @@ const data = {
 };
 ```
 
-Each series may include an optional `name`, `values` array, and `color`. `labels` and each series' `values` should have corresponding entries. An optional `color` on a series sets its color in bar, horizontal-bar, and line charts. Pie charts use only the first series; its values should correspond to the labels and slice colors are selected per category.
+Each series may include an optional `name`, `values` array, and `color`. `labels` and each series' `values` should have corresponding entries. An optional `color` on a series sets its color in bar and line charts. If labels or series are missing or empty, the chart displays “No data.” Pie charts use only the first series; its values should correspond to the labels.
 
 ## How to use
 
@@ -180,21 +180,17 @@ Override one custom element only:
 <mini-chart type="bar" style="--mc-color-1: #0072b2"></mini-chart>
 ```
 
-Series colors are resolved in this order: `series.color`, then `colors[index]` (the colors array repeats as needed), then `--mc-color-N`, then the built-in palette fallback. For pie charts, `colors[index]` selects each slice; `series.color` does not color individual pie slices. A `var()` used as a data color remains an explicit data color, but can refer to a public palette property such as `var(--mc-color-1)`:
+Data colors take precedence over CSS palette properties, which take precedence over built-in defaults. Both `series.color` and the `colors` option set data colors; CSS values (including `var()`) are kept in safe inline custom properties:
 
 ```js
 const data = {
   labels: ['Jan', 'Feb'],
   series: [
-    { name: 'Revenue', values: [8, 12], color: 'var(--mc-color-1)' },
+    { name: 'Revenue', values: [8, 12], color: 'var(--brand)' },
     { name: 'Costs', values: [4, 6] },
   ],
 };
 ```
-
-Set the referenced `--mc-color-N` on `:root` or a chart ancestor before using it as a data color; the built-in fallback is applied to chart palette selection, not to an unset variable inside `series.color`.
-
-The `--_mc-*` properties are internal implementation details; set the public `--mc-*` properties instead.
 
 **Invalid values:** avoid values such as `--mc-color-1: banana`. The built-in fallback nested in `var(--mc-color-1, #0072b2)` does not apply when the property is defined but invalid for `fill`; the resulting declaration becomes invalid at computed-value time and the mark falls back to `fill`'s initial value, not the declared fallback. CSS `@property` registration could validate it, but registration is ignored inside shadow roots, so mini-chart does not depend on it.
 

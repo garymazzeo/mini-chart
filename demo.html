@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>mini-chart accessible demo</title>
   <style>
-    :root { color-scheme: light dark; font: 16px/1.5 system-ui, sans-serif; --mc-color-1: #0072b2; }
+    :root { color-scheme: light dark; font: 16px/1.5 system-ui, sans-serif; --brand: #0072b2; }
     * { box-sizing: border-box; }
     body { margin: 0; padding: 24px 16px; color: CanvasText; background: Canvas; }
     main { width: 100%; max-width: 960px; margin: 0 auto; }
@@ -963,9 +963,9 @@ const horizontal = document.querySelector('#regions');
 const line = document.querySelector('#visitors');
 const pie = document.querySelector('#sources');
 const themeSets = {
-  default: { '--mc-color-1': '#0072b2' },
-  brand: { '--mc-color-1': '#009e73', '--mc-color-2': '#d55e00', '--mc-color-3': '#0072b2', '--mc-color-4': '#cc79a7' },
-  'high-contrast': { '--mc-color-1': '#0072b2', '--mc-color-2': '#d55e00', '--mc-color-3': '#009e73', '--mc-color-4': '#cc79a7', '--mc-color-5': '#a06100', '--mc-color-6': '#007f86', '--mc-color-7': '#8c6d31', '--mc-color-8': '#4c78a8', '--mc-text-color': 'CanvasText', '--mc-axis-text-color': 'CanvasText', '--mc-grid-color': 'CanvasText', '--mc-grid-opacity': '0.5', '--mc-grid-width': '1.5', '--mc-baseline-width': '2', '--mc-focus-color': 'Highlight', '--mc-focus-width': '3px' },
+  default: { '--brand': '#0072b2' },
+  brand: { '--brand': '#009e73', '--mc-color-1': '#0072b2', '--mc-color-2': '#d55e00', '--mc-color-3': '#009e73', '--mc-color-4': '#cc79a7' },
+  'high-contrast': { '--brand': '#0072b2', '--mc-text-color': 'CanvasText', '--mc-axis-text-color': 'CanvasText', '--mc-grid-color': 'CanvasText', '--mc-grid-opacity': '0.5', '--mc-grid-width': '1.5', '--mc-baseline-width': '2', '--mc-focus-color': 'Highlight', '--mc-focus-width': '3px' },
 };
 const themeProperties = new Set(Object.values(themeSets).flatMap((theme) => Object.keys(theme)));
 function applyTheme(name) {
@@ -982,7 +982,7 @@ function updateData() {
   horizontal.data = {
     labels: regions,
     series: [
-      { name: 'Revenue', values: regions.map(() => random(30, 95)), color: 'var(--mc-color-1)' },
+      { name: 'Revenue', values: regions.map(() => random(30, 95)), color: 'var(--brand)' },
       { name: 'Costs', values: regions.map(() => random(10, 45)) },
     ],
   };

@@ -52,7 +52,7 @@ test('web and React renderers meet accessibility and interaction requirements', 
     const page = await browser.newPage({ viewport: { width: 900, height: 900 }, colorScheme: 'light' });
     await page.setContent(`<!doctype html>
       <html lang="en"><head><meta charset="utf-8"><title>mini-chart accessibility test</title><style>
-        :root{color-scheme:light dark;--mc-color-2:#4c78a8}@media(prefers-color-scheme:dark){:root{--mc-color-2:#d55e00}}*{box-sizing:border-box}html,body{margin:0;padding:0;background:Canvas;color:CanvasText;font:16px/1.5 system-ui,sans-serif}
+        :root{color-scheme:light dark;--mc-color-2:#4c78a8;--brand:#007f86}@media(prefers-color-scheme:dark){:root{--mc-color-2:#d55e00;--brand:#0072b2}}*{box-sizing:border-box}html,body{margin:0;padding:0;background:Canvas;color:CanvasText;font:16px/1.5 system-ui,sans-serif}
         main{width:100%;max-width:640px;margin:0 auto;padding:12px}mini-chart{display:block;width:100%;margin:12px 0}
       </style></head><body><main>
         <mini-chart id="web-bar" type="bar" caption="Monthly revenue" table="visible" aria-label="Fallback label"></mini-chart>
@@ -240,7 +240,7 @@ test('web and React renderers meet accessibility and interaction requirements', 
         document.documentElement.style.removeProperty('--mc-surface');
       });
 
-      const paletteColor = await page.evaluate((value) => {
+      const brand = await page.evaluate((value) => {
         const probe = document.createElement('span');
         probe.style.color = value;
         document.body.append(probe);
@@ -248,17 +248,16 @@ test('web and React renderers meet accessibility and interaction requirements', 
         probe.remove();
         return resolved;
       }, PALETTE[5]);
-      await page.evaluate((color) => {
-        document.documentElement.style.setProperty('--mc-color-1', color);
+      await page.evaluate(() => {
         document.querySelector('#web-bar').data = {
           labels: ['Jan', 'Feb', 'Mar'],
-          series: [{ name: 'Revenue', values: [20, 40, 90] }, { name: 'Costs', values: [6, 4, 12], color: 'var(--mc-color-1)' }],
+          series: [{ name: 'Revenue', values: [20, 40, 90] }, { name: 'Costs', values: [6, 4, 12], color: 'var(--brand)' }],
         };
         window.__setReactColorData();
-      }, PALETTE[5]);
+      });
       await page.waitForFunction((expected) => getComputedStyle(document.querySelector('#web-bar').shadowRoot.querySelector('.mc-series.mc-s1 .mc-bar')).fill === expected
-        && getComputedStyle(document.querySelector('#react-fixture figure .mc-series.mc-s1 .mc-bar')).fill === expected, paletteColor);
-      assert.equal((await fillState()).web, paletteColor, 'series data color takes precedence over --mc-color-2 and var(--mc-color-1) resolves');
+        && getComputedStyle(document.querySelector('#react-fixture figure .mc-series.mc-s1 .mc-bar')).fill === expected, brand);
+      assert.equal((await fillState()).web, brand, 'series data color takes precedence over --mc-color-2 and var(--brand) resolves');
 
       await page.evaluate(() => {
         document.querySelector('#web-bar').data = {
@@ -266,7 +265,6 @@ test('web and React renderers meet accessibility and interaction requirements', 
           series: [{ name: 'Revenue', values: [20, 40, 90] }, { name: 'Costs', values: [6, 4, 12] }],
         };
         window.__restoreReactData();
-        document.documentElement.style.removeProperty('--mc-color-1');
         window.__webSvgBeforeThemeChange = document.querySelector('#web-bar').shadowRoot.querySelector('svg');
         window.__reactSvgBeforeThemeChange = document.querySelector('#react-fixture figure').querySelector('svg');
       });
@@ -456,10 +454,10 @@ test('web and React renderers meet accessibility and interaction requirements', 
         assert.equal(await demoPage.locator('#regions').locator('svg').getAttribute('data-chart-type'), 'horizontal-bar');
         assert.equal(await demoPage.locator('#revenue').locator('figcaption').textContent(), 'Monthly revenue');
         await demoPage.evaluate(() => { window.__demoSvgBeforeThemeChange = document.querySelector('#regions').shadowRoot.querySelector('svg'); });
-        const defaultPalette = await demoPage.locator('#regions .mc-series.mc-s0 .mc-bar').first().evaluate((bar) => getComputedStyle(bar).fill);
+        const defaultBrand = await demoPage.locator('#regions .mc-series.mc-s0 .mc-bar').first().evaluate((bar) => getComputedStyle(bar).fill);
         await demoPage.locator('#theme').selectOption('brand');
-        const brandedPalette = await demoPage.locator('#regions .mc-series.mc-s0 .mc-bar').first().evaluate((bar) => getComputedStyle(bar).fill);
-        assert.notEqual(brandedPalette, defaultPalette, 'theme control changes --mc-color-1 referenced by the data color');
+        const branded = await demoPage.locator('#regions .mc-series.mc-s0 .mc-bar').first().evaluate((bar) => getComputedStyle(bar).fill);
+        assert.notEqual(branded, defaultBrand, 'theme control changes the CSS custom property used by var(--brand)');
         assert.equal(await demoPage.evaluate(() => document.querySelector('#regions').shadowRoot.querySelector('svg') === window.__demoSvgBeforeThemeChange), true, 'theme switch does not rebuild the chart');
         await demoPage.locator('#grid-style').selectOption('dashed');
         assert.match(await demoPage.locator('#visitors .mc-grid').first().evaluate((line) => getComputedStyle(line).strokeDasharray), /4/);
@@ -477,17 +475,16 @@ test('web and React renderers meet accessibility and interaction requirements', 
       try {
         await reactDemoPage.setContent('<!doctype html><html lang="en"><head><title>mini-chart React demo test</title></head><body><div id="app"></div></body></html>');
         await reactDemoPage.evaluate(() => {
-          document.documentElement.style.setProperty('--mc-color-1', 'rgb(3, 4, 5)');
           document.documentElement.style.setProperty('--mc-color-2', 'rgb(1, 2, 3)');
           document.documentElement.style.setProperty('--mc-grid-dash', '2 2');
         });
         await reactDemoPage.addScriptTag({ content: await bundle('test/fixtures/assembled-page.jsx') });
         await reactDemoPage.waitForFunction(() => document.querySelector('#app figure .mc-live-region'));
         await reactDemoPage.evaluate(() => { window.__reactDemoSvgBeforeThemeChange = document.querySelector('#app figure svg'); });
-        const reactDefaultPalette = await reactDemoPage.locator('#app figure .mc-series.mc-s0 .mc-bar').first().evaluate((bar) => getComputedStyle(bar).fill);
+        const reactDefaultBrand = await reactDemoPage.locator('#app figure .mc-series.mc-s0 .mc-bar').first().evaluate((bar) => getComputedStyle(bar).fill);
         await reactDemoPage.locator('#theme').selectOption('brand');
-        const reactBrandedPalette = await reactDemoPage.locator('#app figure .mc-series.mc-s0 .mc-bar').first().evaluate((bar) => getComputedStyle(bar).fill);
-        assert.notEqual(reactBrandedPalette, reactDefaultPalette, 'React theme control changes --mc-color-1 through the cascade');
+        const reactBranded = await reactDemoPage.locator('#app figure .mc-series.mc-s0 .mc-bar').first().evaluate((bar) => getComputedStyle(bar).fill);
+        assert.notEqual(reactBranded, reactDefaultBrand, 'React theme control changes --brand through the cascade');
         assert.equal(await reactDemoPage.evaluate(() => document.querySelector('#app figure svg') === window.__reactDemoSvgBeforeThemeChange), true, 'React theme switch does not rebuild the chart');
         await reactDemoPage.locator('#grid-style').selectOption('dashed');
         assert.match(await reactDemoPage.locator('#app figure .mc-grid').first().evaluate((line) => getComputedStyle(line).strokeDasharray), /4/);
@@ -513,11 +510,11 @@ test('web and React renderers meet accessibility and interaction requirements', 
         assert.ok(reflow.main <= 320);
         await reactDemoPage.evaluate(() => window.__pageRoot.unmount());
         const restoredStyle = await reactDemoPage.evaluate(() => ({
-          palette: document.documentElement.style.getPropertyValue('--mc-color-1'),
           color: document.documentElement.style.getPropertyValue('--mc-color-2'),
           grid: document.documentElement.style.getPropertyValue('--mc-grid-dash'),
+          brand: document.documentElement.style.getPropertyValue('--brand'),
         }));
-        assert.deepEqual(restoredStyle, { palette: 'rgb(3, 4, 5)', color: 'rgb(1, 2, 3)', grid: '2 2' }, 'unmount restores existing inline theme variables');
+        assert.deepEqual(restoredStyle, { color: 'rgb(1, 2, 3)', grid: '2 2', brand: '' }, 'unmount restores existing inline theme variables');
         assert.deepEqual(reactErrors, []);
       } finally {
         await reactDemoPage.close();
