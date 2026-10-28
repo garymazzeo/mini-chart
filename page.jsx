@@ -814,22 +814,22 @@ const random = (min, max) => Math.round(min + Math.random() * (max - min));
 const initialData = {
   labels: MONTHS,
   series: [
-    { name: 'Revenue', values: [62, 70, 55, 84, 91, 78], color: 'var(--brand)' },
+    { name: 'Revenue', values: [62, 70, 55, 84, 91, 78], color: 'var(--mc-color-1)' },
     { name: 'Costs', values: [12, 18, 14, 30, 35, 27] },
   ],
 };
 const randomData = () => ({
   labels: MONTHS,
   series: [
-    { name: 'Revenue', values: MONTHS.map(() => random(40, 100)), color: 'var(--brand)' },
+    { name: 'Revenue', values: MONTHS.map(() => random(40, 100)), color: 'var(--mc-color-1)' },
     { name: 'Costs', values: MONTHS.map(() => random(5, 45)) },
   ],
 });
 
 const STYLE_THEMES = {
-  default: { '--brand': '#0072b2' },
-  brand: { '--brand': '#009e73', '--mc-color-1': '#0072b2', '--mc-color-2': '#d55e00', '--mc-color-3': '#009e73', '--mc-color-4': '#cc79a7' },
-  'high-contrast': { '--brand': '#0072b2', '--mc-text-color': 'CanvasText', '--mc-axis-text-color': 'CanvasText', '--mc-grid-color': 'CanvasText', '--mc-grid-opacity': '0.5', '--mc-grid-width': '1.5', '--mc-baseline-width': '2', '--mc-focus-color': 'Highlight', '--mc-focus-width': '3px' },
+  default: { '--mc-color-1': '#0072b2' },
+  brand: { '--mc-color-1': '#009e73', '--mc-color-2': '#d55e00', '--mc-color-3': '#0072b2', '--mc-color-4': '#cc79a7' },
+  'high-contrast': { '--mc-color-1': '#0072b2', '--mc-color-2': '#d55e00', '--mc-color-3': '#009e73', '--mc-color-4': '#cc79a7', '--mc-color-5': '#a06100', '--mc-color-6': '#007f86', '--mc-color-7': '#8c6d31', '--mc-color-8': '#4c78a8', '--mc-text-color': 'CanvasText', '--mc-axis-text-color': 'CanvasText', '--mc-grid-color': 'CanvasText', '--mc-grid-opacity': '0.5', '--mc-grid-width': '1.5', '--mc-baseline-width': '2', '--mc-focus-color': 'Highlight', '--mc-focus-width': '3px' },
 };
 const STYLE_THEME_PROPERTIES = [...new Set(Object.values(STYLE_THEMES).flatMap((theme) => Object.keys(theme)))];
 const STYLE_GRID_DASHES = { solid: 'none', dashed: '4 4', dotted: '1 3' };
@@ -878,6 +878,7 @@ export default function Page() {
 
   return (
     <main style={{ maxWidth: 720, width: '100%', boxSizing: 'border-box', margin: '0 auto', padding: 24, fontFamily: 'system-ui, sans-serif' }}>
+      <style>{':root { --mc-color-1: #0072b2; }'}</style>
       <h1>mini-chart in React</h1>
       <p>Focus the chart and use arrow keys, Home, End, or Escape. The tooltip is also available by hover or touch.</p>
       <div style={{ display: 'flex', gap: 12, margin: '16px 0', flexWrap: 'wrap' }}>
