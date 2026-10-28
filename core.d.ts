@@ -29,7 +29,6 @@ export interface BuildChartOptions {
   data?: ChartData;
   width?: number;
   height?: number;
-  fontSize?: number;
   colors?: string[];
   caption?: string;
   description?: string;
@@ -41,11 +40,10 @@ export interface BuildChartOptions {
 
 export interface SvgNode {
   tag: string;
-  attrs: Record<string, string | number | Record<string, string | number> | undefined>;
+  attrs: Record<string, string | number | undefined>;
   children: Array<SvgNode | string>;
 }
 
-export const chartCss: string;
 export const PALETTE: string[];
 export function niceTicks(min: number, max: number, count?: number): number[];
 export function buildChart(options?: BuildChartOptions): SvgNode;

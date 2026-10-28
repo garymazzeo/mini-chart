@@ -1,5 +1,5 @@
 // mini-chart.js — <mini-chart> custom element. DOM renderer for core.js.
-import { buildFigure, chartCss, clampPoint, nextPoint, pointDimensions } from './core.js';
+import { buildFigure, clampPoint, nextPoint, pointDimensions } from './core.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 let instanceCount = 0;
@@ -9,12 +9,7 @@ function createDOM(node, parentNamespace = null) {
   const namespace = node.tag === 'svg' || parentNamespace === SVG_NS ? SVG_NS : null;
   const element = namespace ? document.createElementNS(namespace, node.tag) : document.createElement(node.tag);
   for (const [name, value] of Object.entries(node.attrs)) {
-    if (value === undefined || value === null) continue;
-    if (name === 'style' && typeof value === 'object') {
-      for (const [property, propertyValue] of Object.entries(value)) element.style.setProperty(property, String(propertyValue));
-    } else {
-      element.setAttribute(name, String(value));
-    }
+    if (value !== undefined && value !== null) element.setAttribute(name, String(value));
   }
   for (const child of node.children) element.append(createDOM(child, namespace));
   return element;
@@ -34,21 +29,12 @@ function patchDOM(current, node, parentNamespace = null) {
     return createDOM(node, parentNamespace);
   }
 
-  const nextAttributes = new Map(Object.entries(node.attrs).filter(([, value]) => value !== undefined && value !== null));
+  const nextAttributes = new Map(Object.entries(node.attrs).filter(([, value]) => value !== undefined && value !== null).map(([name, value]) => [name, String(value)]));
   for (const attribute of Array.from(current.attributes)) {
     if (!nextAttributes.has(attribute.name)) current.removeAttribute(attribute.name);
   }
   for (const [name, value] of nextAttributes) {
-    if (name === 'style' && typeof value === 'object') {
-      const expected = new Set(Object.keys(value));
-      for (const property of Array.from(current.style)) {
-        if (!expected.has(property)) current.style.removeProperty(property);
-      }
-      for (const [property, propertyValue] of Object.entries(value)) current.style.setProperty(property, String(propertyValue));
-    } else {
-      const stringValue = String(value);
-      if (current.getAttribute(name) !== stringValue) current.setAttribute(name, stringValue);
-    }
+    if (current.getAttribute(name) !== value) current.setAttribute(name, value);
   }
 
   const existingChildren = Array.from(current.childNodes);
@@ -75,7 +61,7 @@ function pointFromEvent(target) {
 }
 
 class MiniChart extends HTMLElement {
-  static observedAttributes = ['type', 'width', 'height', 'font-size', 'data', 'caption', 'description', 'table', 'interactive', 'aria-label', 'aria-labelledby'];
+  static observedAttributes = ['type', 'width', 'height', 'data', 'caption', 'description', 'table', 'interactive', 'aria-label', 'aria-labelledby'];
   #data = null;
   #activePoint = null;
   #queued = false;
@@ -86,9 +72,7 @@ class MiniChart extends HTMLElement {
   constructor() {
     super();
     const root = this.attachShadow({ mode: 'open' });
-    const style = document.createElement('style');
-    style.textContent = `:host{display:block;max-width:100%}${chartCss}`;
-    root.append(style);
+    root.innerHTML = '<style>:host{display:block;max-width:100%}.mc-figure{max-width:100%}svg{display:block;max-width:100%;height:auto}</style>';
     root.addEventListener('keydown', (event) => this.#onKeyDown(event));
     root.addEventListener('pointermove', (event) => this.#onPointer(event));
     root.addEventListener('pointerdown', (event) => this.#onPointer(event));
@@ -136,7 +120,6 @@ class MiniChart extends HTMLElement {
       data,
       width,
       height: Number(this.getAttribute('height')) || 300,
-      fontSize: Number(this.getAttribute('font-size')) || 12,
       caption: this.getAttribute('caption') || undefined,
       description,
       table: this.getAttribute('table') ?? 'hidden',
@@ -165,6 +148,7 @@ class MiniChart extends HTMLElement {
           attrs: {
             id,
             class: 'mc-visually-hidden mc-host-label',
+            style: 'position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0',
           },
           children: [text],
         });

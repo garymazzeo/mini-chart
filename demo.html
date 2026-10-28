@@ -5,14 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>mini-chart accessible demo</title>
   <style>
-    :root { color-scheme: light dark; font: 16px/1.5 system-ui, sans-serif; --brand: #0072b2; }
+    :root { color-scheme: light dark; font: 16px/1.5 system-ui, sans-serif; }
     * { box-sizing: border-box; }
     body { margin: 0; padding: 24px 16px; color: CanvasText; background: Canvas; }
     main { width: 100%; max-width: 960px; margin: 0 auto; }
     h1 { font-size: 1.6rem; margin: 0 0 8px; }
     .instructions { max-width: 72ch; margin: 0 0 20px; }
-    .controls { display: flex; flex-wrap: wrap; gap: 12px; margin: 16px 0; }
-    .controls label { display: grid; gap: 4px; }
     .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 16px; }
     section { min-width: 0; padding: 12px; border: 1px solid currentColor; border-radius: 8px; }
     h2 { font-size: 1rem; margin: 0 0 8px; }
@@ -23,14 +21,6 @@
   <main>
     <h1>mini-chart</h1>
     <p class="instructions">Focus an interactive chart and use Left/Right to move through categories, Up/Down to change series, Home/End to jump to a boundary, and Escape to dismiss the tooltip. You can also hover or tap a data point. The revenue examples include vertical and horizontal bars. The charts demonstrate visible, screen-reader-only, and omitted data tables.</p>
-    <div class="controls">
-      <label for="theme">Theme
-        <select id="theme"><option value="default">Default</option><option value="brand">Brand</option><option value="high-contrast">High contrast</option></select>
-      </label>
-      <label for="grid-style">Grid
-        <select id="grid-style"><option value="solid">Solid</option><option value="dashed">Dashed</option><option value="dotted">Dotted</option></select>
-      </label>
-    </div>
     <div class="grid">
       <section><h2>Revenue (visible table)</h2><mini-chart id="revenue" type="bar" caption="Monthly revenue" table="visible"></mini-chart></section>
       <section><h2>Revenue by region (horizontal bars)</h2><mini-chart id="regions" type="horizontal-bar" caption="Revenue by region" description="Revenue and costs for each region." table="hidden"></mini-chart></section>
@@ -43,100 +33,14 @@
 // core.js — framework-agnostic. No DOM, no React.
 // buildChart() returns an SVG tree; buildFigure() wraps it with HTML alternatives.
 
-const chartCss = `
-.mc-chart {
-  display: block;
-  max-width: 100%;
-  box-sizing: border-box;
-  color: var(--_mc-text-color);
-  font-family: var(--_mc-font-family);
-  --_mc-text-color: var(--mc-text-color, currentColor);
-  --_mc-axis-text-color: var(--mc-axis-text-color, var(--_mc-text-color));
-  --_mc-font-family: var(--mc-font-family, system-ui, sans-serif);
-  --_mc-grid-color: var(--mc-grid-color, currentColor);
-  --_mc-grid-opacity: var(--mc-grid-opacity, 0.15);
-  --_mc-grid-width: var(--mc-grid-width, 1);
-  --_mc-grid-dash: var(--mc-grid-dash, none);
-  --_mc-baseline-color: var(--mc-baseline-color, var(--_mc-grid-color));
-  --_mc-baseline-width: var(--mc-baseline-width, var(--_mc-grid-width));
-  --_mc-baseline-dash: var(--mc-baseline-dash, var(--_mc-grid-dash));
-  --_mc-line-width: var(--mc-line-width, 2);
-  --_mc-point-radius: var(--mc-point-radius, 3.5px);
-  --_mc-bar-radius: var(--mc-bar-radius, 0px);
-  --_mc-surface: var(--mc-surface, Canvas);
-  --_mc-slice-gap: var(--mc-slice-gap, 1.5px);
-  --_mc-focus-color: var(--mc-focus-color, currentColor);
-  --_mc-focus-width: var(--mc-focus-width, 2px);
-  --_mc-tooltip-bg: var(--mc-tooltip-bg, Canvas);
-  --_mc-tooltip-color: var(--mc-tooltip-color, CanvasText);
-  --_mc-tooltip-border: var(--mc-tooltip-border, currentColor);
-  --_mc-inactive-opacity: var(--mc-inactive-opacity, 0.35);
-}
-.mc-chart.mc-figure { width: 100%; margin: 0; position: relative; }
-.mc-chart svg.mc-chart { width: 100%; height: auto; }
-.mc-chart .mc-s0 { --_mc-c: var(--_mc-data-color, var(--mc-color-1, #0072b2)); }
-.mc-chart .mc-s1 { --_mc-c: var(--_mc-data-color, var(--mc-color-2, #d55e00)); }
-.mc-chart .mc-s2 { --_mc-c: var(--_mc-data-color, var(--mc-color-3, #009e73)); }
-.mc-chart .mc-s3 { --_mc-c: var(--_mc-data-color, var(--mc-color-4, #cc79a7)); }
-.mc-chart .mc-s4 { --_mc-c: var(--_mc-data-color, var(--mc-color-5, #a06100)); }
-.mc-chart .mc-s5 { --_mc-c: var(--_mc-data-color, var(--mc-color-6, #007f86)); }
-.mc-chart .mc-s6 { --_mc-c: var(--_mc-data-color, var(--mc-color-7, #8c6d31)); }
-.mc-chart .mc-s7 { --_mc-c: var(--_mc-data-color, var(--mc-color-8, #4c78a8)); }
-.mc-chart .mc-grid { stroke: var(--_mc-grid-color); stroke-opacity: var(--_mc-grid-opacity); stroke-width: var(--_mc-grid-width); stroke-dasharray: var(--_mc-grid-dash); vector-effect: non-scaling-stroke; }
-.mc-chart .mc-baseline { stroke: var(--_mc-baseline-color); stroke-width: var(--_mc-baseline-width); stroke-dasharray: var(--_mc-baseline-dash); }
-.mc-chart .mc-axis-label { fill: var(--_mc-axis-text-color); font-family: var(--_mc-font-family); }
-.mc-chart .mc-legend-label { fill: var(--_mc-text-color); font-family: var(--_mc-font-family); }
-.mc-chart .mc-bar { fill: var(--_mc-series-fill, var(--_mc-c)); rx: var(--_mc-bar-radius); }
-.mc-chart .mc-line { fill: none; stroke: var(--_mc-c); stroke-width: var(--_mc-line-width); stroke-dasharray: var(--_mc-series-dash, none); stroke-linejoin: round; }
-.mc-chart .mc-marker { fill: var(--_mc-c); stroke: var(--_mc-surface); stroke-width: 1; r: var(--_mc-point-radius); }
-.mc-chart .mc-slice { fill: var(--_mc-c); stroke: var(--_mc-surface); stroke-width: var(--_mc-slice-gap); }
-.mc-chart .mc-pattern-background { fill: var(--_mc-c); }
-.mc-chart .mc-pattern-line { stroke: var(--_mc-surface); stroke-width: 2; }
-.mc-chart .mc-focus-light { fill: none; stroke: var(--_mc-surface); stroke-width: calc(var(--_mc-focus-width) * 2); vector-effect: non-scaling-stroke; pointer-events: none; }
-.mc-chart .mc-focus-dark { fill: none; stroke: var(--_mc-focus-color); stroke-width: var(--_mc-focus-width); vector-effect: non-scaling-stroke; pointer-events: none; }
-.mc-chart .mc-svg-focus-light, .mc-chart .mc-svg-focus-dark { fill: none; opacity: 0; pointer-events: none; vector-effect: non-scaling-stroke; }
-.mc-chart .mc-svg-focus-light { stroke: var(--_mc-surface); stroke-width: calc(var(--_mc-focus-width) * 2); }
-.mc-chart .mc-svg-focus-dark { stroke: var(--_mc-focus-color); stroke-width: var(--_mc-focus-width); }
-.mc-chart:focus-visible .mc-svg-focus-light, .mc-chart:focus-visible .mc-svg-focus-dark { opacity: 1; }
-.mc-chart[data-has-active="true"] .mc-series:not(.mc-active) { opacity: var(--_mc-inactive-opacity); }
-.mc-chart .mc-tooltip-box { fill: var(--_mc-tooltip-bg); stroke: var(--_mc-tooltip-border); stroke-width: 1; }
-.mc-chart .mc-tooltip-text { fill: var(--_mc-tooltip-color); font-family: var(--_mc-font-family); }
-.mc-chart .mc-data-table.mc-table-hidden, .mc-chart .mc-live-region, .mc-chart .mc-visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); clip-path: inset(50%); white-space: nowrap; border: 0; }
-.mc-chart .mc-data-table.mc-table-visible { width: 100%; table-layout: fixed; border-collapse: collapse; overflow-wrap: anywhere; }
-@media (forced-colors: active) {
-  .mc-chart .mc-axis-label, .mc-chart .mc-legend-label, .mc-chart .mc-empty-text { fill: CanvasText !important; }
-  .mc-chart .mc-grid { stroke: GrayText !important; stroke-opacity: 1 !important; }
-  .mc-chart .mc-baseline { stroke: CanvasText !important; }
-  .mc-chart .mc-bar { fill: var(--_mc-series-fill, ButtonText) !important; }
-  .mc-chart .mc-marker, .mc-chart .mc-slice, .mc-chart .mc-legend-swatch { fill: ButtonText !important; }
-  .mc-chart .mc-bar { stroke: CanvasText !important; stroke-width: 1 !important; }
-  .mc-chart .mc-s1 .mc-bar { stroke-dasharray: 2 2 !important; }
-  .mc-chart .mc-s2 .mc-bar { stroke-dasharray: 4 2 !important; }
-  .mc-chart .mc-s3 .mc-bar { stroke-dasharray: 1 2 !important; }
-  .mc-chart .mc-s4 .mc-bar { stroke-dasharray: 6 2 1 2 !important; }
-  .mc-chart .mc-s5 .mc-bar { stroke-dasharray: 3 1 !important; }
-  .mc-chart .mc-s6 .mc-bar { stroke-dasharray: 5 1 1 1 !important; }
-  .mc-chart .mc-s7 .mc-bar { stroke-dasharray: 1 1 !important; }
-  .mc-chart .mc-line { stroke: ButtonText !important; }
-  .mc-chart .mc-pattern-background { fill: Canvas !important; stroke: ButtonText !important; }
-  .mc-chart .mc-pattern-line { stroke: ButtonText !important; }
-  .mc-chart .mc-focus-light, .mc-chart .mc-svg-focus-light { stroke: Canvas !important; }
-  .mc-chart .mc-focus-dark, .mc-chart .mc-svg-focus-dark { stroke: Highlight !important; }
-  .mc-chart .mc-tooltip-box { fill: Canvas !important; stroke: CanvasText !important; }
-  .mc-chart .mc-tooltip-text { fill: CanvasText !important; }
-}
-`;
-
-// Keep the legacy PALETTE export derived from the stylesheet to avoid duplicating defaults.
-const PALETTE = Array.from({ length: 8 }, (_, index) => {
-  const match = chartCss.match(new RegExp(`--mc-color-${index + 1},\\s*([^\\)]+)\\)`));
-  if (!match) throw new Error(`Missing CSS fallback for --mc-color-${index + 1}`);
-  return match[1].trim();
-});
+// Verified contrast against #fff / #14181b respectively: 5.185/3.443, 3.867/4.617,
+// 3.421/5.219, 3.061/5.833, 4.995/3.575, 4.795/3.724, 4.831/3.696.
+const PALETTE = ['#0072B2', '#D55E00', '#009E73', '#CC79A7', '#A06100', '#007F86', '#8C6D31'];
 
 const MARKERS = ['circle', 'square', 'triangle', 'diamond', 'cross', 'plus', 'hexagon'];
 const DASHES = ['', '6 3', '2 2', '8 2 2 2', '1 3', '5 2 1 2', '3 2'];
 const HATCHES = ['M-2 8L8 -2M2 10L10 2', 'M-2 -2L8 8M2 -2L10 6', 'M2 0V8M6 0V8', 'M0 2H8M0 6H8', 'M0 0L8 8M0 8L8 0'];
+const TABLE_HIDDEN_STYLE = 'position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0';
 let generatedId = 0;
 
 const h = (tag, attrs = {}, ...children) => ({ tag, attrs, children: children.flat().filter((child) => child != null) });
@@ -144,8 +48,6 @@ const r = (number) => +number.toFixed(2);
 const linear = (d0, d1, r0, r1) => (value) => (d1 === d0 ? (r0 + r1) / 2 : r0 + ((value - d0) / (d1 - d0)) * (r1 - r0));
 const safeId = (prefix) => String(prefix).replace(/[^A-Za-z0-9_.:-]/g, '-');
 const format = (value) => Number.isFinite(value) ? String(value) : '';
-const seriesClass = (index, active = false) => `mc-series mc-s${index % 8}${active ? ' mc-active' : ''}`;
-const dataColorStyle = (value) => value === undefined ? undefined : { '--_mc-data-color': value };
 
 function normalizeOptions(options = {}) {
   const type = options.type ?? 'bar';
@@ -162,8 +64,7 @@ function normalizeOptions(options = {}) {
     data: options.data ?? { labels: [], series: [] },
     width: Number(options.width) > 0 ? Number(options.width) : 480,
     height: Math.max(160, Number(options.height) || 300),
-    fontSize: Number(options.fontSize) > 0 ? Number(options.fontSize) : 12,
-    colors: options.colors?.length ? options.colors : undefined,
+    colors: options.colors?.length ? options.colors : PALETTE,
     interactive: options.interactive !== false,
     idPrefix: safeId(options.idPrefix || `mini-chart-${++generatedId}`),
   };
@@ -203,20 +104,20 @@ function niceTicks(min, max, count = 5) {
   return ticks;
 }
 
-function markerShape(shape, x, y, size, attrs = {}) {
-  if (shape === 'square') return h('rect', { x: r(x - size), y: r(y - size), width: 2 * size, height: 2 * size, ...attrs });
-  if (shape === 'triangle') return h('path', { d: `M${r(x)} ${r(y - size)}L${r(x + size)} ${r(y + size)}L${r(x - size)} ${r(y + size)}Z`, ...attrs });
-  if (shape === 'diamond') return h('path', { d: `M${r(x)} ${r(y - size)}L${r(x + size)} ${r(y)}L${r(x)} ${r(y + size)}L${r(x - size)} ${r(y)}Z`, ...attrs });
-  if (shape === 'cross') return h('path', { d: `M${r(x - size)} ${r(y - size / 2)}H${r(x - size / 2)}V${r(y - size)}H${r(x + size / 2)}V${r(y - size / 2)}H${r(x + size)}V${r(y + size / 2)}H${r(x + size / 2)}V${r(y + size)}H${r(x - size / 2)}V${r(y + size / 2)}H${r(x - size)}Z`, ...attrs });
-  if (shape === 'plus') return h('path', { d: `M${r(x - size / 3)} ${r(y - size)}H${r(x + size / 3)}V${r(y - size / 3)}H${r(x + size)}V${r(y + size / 3)}H${r(x + size / 3)}V${r(y + size)}H${r(x - size / 3)}V${r(y + size / 3)}H${r(x - size)}V${r(y - size / 3)}H${r(x - size / 3)}Z`, ...attrs });
-  if (shape === 'hexagon') return h('path', { d: `M${r(x - size)} ${r(y)}L${r(x - size / 2)} ${r(y - size)}H${r(x + size / 2)}L${r(x + size)} ${r(y)}L${r(x + size / 2)} ${r(y + size)}H${r(x - size / 2)}Z`, ...attrs });
-  return h('circle', { cx: r(x), cy: r(y), r: size, ...attrs });
+function markerShape(shape, x, y, size, fill, attrs = {}) {
+  if (shape === 'square') return h('rect', { x: r(x - size), y: r(y - size), width: 2 * size, height: 2 * size, fill, ...attrs });
+  if (shape === 'triangle') return h('path', { d: `M${r(x)} ${r(y - size)}L${r(x + size)} ${r(y + size)}L${r(x - size)} ${r(y + size)}Z`, fill, ...attrs });
+  if (shape === 'diamond') return h('path', { d: `M${r(x)} ${r(y - size)}L${r(x + size)} ${r(y)}L${r(x)} ${r(y + size)}L${r(x - size)} ${r(y)}Z`, fill, ...attrs });
+  if (shape === 'cross') return h('path', { d: `M${r(x - size)} ${r(y - size / 2)}H${r(x - size / 2)}V${r(y - size)}H${r(x + size / 2)}V${r(y - size / 2)}H${r(x + size)}V${r(y + size / 2)}H${r(x + size / 2)}V${r(y + size)}H${r(x - size / 2)}V${r(y + size / 2)}H${r(x - size)}Z`, fill, ...attrs });
+  if (shape === 'plus') return h('path', { d: `M${r(x - size / 3)} ${r(y - size)}H${r(x + size / 3)}V${r(y - size / 3)}H${r(x + size)}V${r(y + size / 3)}H${r(x + size / 3)}V${r(y + size)}H${r(x - size / 3)}V${r(y + size / 3)}H${r(x - size)}V${r(y - size / 3)}H${r(x - size / 3)}Z`, fill, ...attrs });
+  if (shape === 'hexagon') return h('path', { d: `M${r(x - size)} ${r(y)}L${r(x - size / 2)} ${r(y - size)}H${r(x + size / 2)}L${r(x + size)} ${r(y)}L${r(x + size / 2)} ${r(y + size)}H${r(x - size / 2)}Z`, fill, ...attrs });
+  return h('circle', { cx: r(x), cy: r(y), r: size, fill, ...attrs });
 }
 
 function focusRing(x, y, size = 8) {
   return [
-    h('circle', { cx: r(x), cy: r(y), r: size + 2, fill: 'none', class: 'mc-focus-light', 'aria-hidden': 'true' }),
-    h('circle', { cx: r(x), cy: r(y), r: size + 2, fill: 'none', class: 'mc-focus-dark', 'aria-hidden': 'true' }),
+    h('circle', { cx: r(x), cy: r(y), r: size + 2, fill: 'none', stroke: '#fff', 'stroke-width': 6, class: 'mc-focus-light', 'aria-hidden': 'true' }),
+    h('circle', { cx: r(x), cy: r(y), r: size + 2, fill: 'none', stroke: '#000', 'stroke-width': 2.5, class: 'mc-focus-dark', 'aria-hidden': 'true' }),
   ];
 }
 
@@ -230,33 +131,27 @@ function legend(entries, width, startY) {
     const column = index % columns;
     const x = 10 + column * cellWidth;
     const y = startY + row * 18;
-    const attrs = {
-      transform: `translate(${r(x)} ${r(y)})`,
-      class: `mc-legend-item ${seriesClass(entry.index, entry.active)}`,
-      style: dataColorStyle(entry.color),
-    };
-    return h('g', attrs,
-      markerShape(entry.marker ?? 'square', 5, -4, 4, { class: 'mc-legend-swatch', 'aria-hidden': 'true' }),
-      h('text', { x: 13, y: 0, class: 'mc-legend-label' }, String(entry.name)));
+    return h('g', { transform: `translate(${r(x)} ${r(y)})`, class: 'mc-legend-item' },
+      markerShape(entry.marker ?? 'square', 5, -4, 4, entry.color, { 'aria-hidden': 'true' }),
+      h('text', { x: 13, y: 0, fill: 'currentColor', class: 'mc-legend-label' }, String(entry.name)));
   });
-  return { nodes: [h('g', { class: 'mc-legend' }, nodes)], rows };
+  return { nodes, rows };
 }
 
-function patternDefs(idPrefix, series, colors) {
+function patternDefs(idPrefix, series, color) {
   const patterns = series.map((item, index) => {
     if (index < 2) return null;
     const patternId = `${idPrefix}-pattern-${index}`;
     const hatch = HATCHES[(index - 2) % HATCHES.length];
-    const dataColor = item.color ?? colors?.[index % (colors?.length || 1)];
     return h('pattern', { id: patternId, width: 8, height: 8, patternUnits: 'userSpaceOnUse' },
-      h('rect', { width: 8, height: 8, class: `mc-pattern-background mc-s${index % 8}`, style: dataColorStyle(dataColor) }),
-      h('path', { d: hatch, class: 'mc-pattern-line' }));
+      h('rect', { width: 8, height: 8, fill: color(index), class: 'mc-pattern-background' }),
+      h('path', { d: hatch, stroke: 'Canvas', 'stroke-width': 2, class: 'mc-pattern-line' }));
   });
   return h('defs', {}, patterns);
 }
 
-function axisChart(options) {
-  const { type, data, width, height, idPrefix, activePoint, colors, interactive } = options;
+function axisChart(options, color, titleId, descId) {
+  const { type, data, width, height, idPrefix, interactive, activePoint } = options;
   const labels = data.labels ?? [];
   const series = data.series ?? [];
   const hasLegend = series.length > 1;
@@ -273,29 +168,25 @@ function axisChart(options) {
   const y = linear(ticks[0], ticks[ticks.length - 1], margins.top + innerHeight, margins.top);
   const band = innerWidth / Math.max(1, labels.length);
   const centerX = (index) => margins.left + band * (index + 0.5);
-  const out = [patternDefs(idPrefix, series, colors)];
+  const colorAt = (index) => series[index]?.color ?? color(index);
+  const out = [patternDefs(idPrefix, series, colorAt)];
 
   for (const tick of ticks) {
-    const gridClass = tick === 0 ? 'mc-grid mc-baseline' : 'mc-grid';
     out.push(
-      h('line', { x1: margins.left, x2: margins.left + innerWidth, y1: r(y(tick)), y2: r(y(tick)), class: gridClass, 'aria-hidden': 'true' }),
-      h('text', { x: margins.left - 8, y: r(y(tick)), 'text-anchor': 'end', 'dominant-baseline': 'middle', class: 'mc-axis-label' }, String(tick)));
+      h('line', { x1: margins.left, x2: margins.left + innerWidth, y1: r(y(tick)), y2: r(y(tick)), stroke: 'currentColor', 'stroke-opacity': 0.22, class: 'mc-gridline', 'aria-hidden': 'true' }),
+      h('text', { x: margins.left - 8, y: r(y(tick)), 'text-anchor': 'end', 'dominant-baseline': 'middle', fill: 'currentColor', class: 'mc-axis-label' }, String(tick)));
   }
 
   const widestLabel = labels.reduce((widest, label) => Math.max(widest, String(label).length * 7.2), 0);
   const labelStep = Math.max(1, Math.ceil(widestLabel / Math.max(1, band - 10)));
   labels.forEach((label, index) => {
     if (index % labelStep !== 0) return;
-    out.push(h('text', { x: r(centerX(index)), y: margins.top + innerHeight + 18, 'text-anchor': 'middle', class: 'mc-axis-label' }, String(label)));
+    out.push(h('text', { x: r(centerX(index)), y: margins.top + innerHeight + 18, 'text-anchor': 'middle', fill: 'currentColor', class: 'mc-axis-label' }, String(label)));
   });
 
   const pointPositions = new Map();
   series.forEach((item, seriesIndex) => {
-    const dataColor = item.color ?? colors?.[seriesIndex % (colors?.length || 1)];
-    const renderedSeries = [];
-    const seriesStyle = {};
-    if (type === 'line') seriesStyle['--_mc-series-dash'] = DASHES[seriesIndex % DASHES.length];
-    if (type === 'bar' && seriesIndex > 1) seriesStyle['--_mc-series-fill'] = `url(#${idPrefix}-pattern-${seriesIndex})`;
+    const seriesColor = colorAt(seriesIndex);
     if (type === 'bar') {
       const barWidth = (band * 0.8) / Math.max(1, series.length);
       (item.values ?? []).forEach((value, categoryIndex) => {
@@ -307,12 +198,12 @@ function axisChart(options) {
         const py = y(value);
         const active = activePoint?.series === seriesIndex && activePoint?.category === categoryIndex;
         pointPositions.set(`${seriesIndex}:${categoryIndex}`, { x: px, y: py, size: 8, text: `${item.name || `Series ${seriesIndex + 1}`}, ${labels[categoryIndex]}: ${value}` });
-        const bar = h('rect', { x: r(x), y: r(top), width: r(Math.max(barWidth - 1, 1)), height: r(barHeight), rx: 0, class: 'mc-bar' });
+        const bar = h('rect', { x: r(x), y: r(top), width: r(Math.max(barWidth - 1, 1)), height: r(barHeight), fill: seriesIndex > 1 ? `url(#${idPrefix}-pattern-${seriesIndex})` : seriesColor, class: 'mc-bar' });
         const ring = active ? [
-          h('rect', { x: r(x - 3), y: r(top - 3), width: r(Math.max(barWidth - 1, 1) + 6), height: r(barHeight + 6), fill: 'none', class: 'mc-focus-light', 'aria-hidden': 'true' }),
-          h('rect', { x: r(x - 3), y: r(top - 3), width: r(Math.max(barWidth - 1, 1) + 6), height: r(barHeight + 6), fill: 'none', class: 'mc-focus-dark', 'aria-hidden': 'true' }),
+          h('rect', { x: r(x - 3), y: r(top - 3), width: r(Math.max(barWidth - 1, 1) + 6), height: r(barHeight + 6), fill: 'none', stroke: '#fff', 'stroke-width': 6, class: 'mc-focus-light', 'aria-hidden': 'true' }),
+          h('rect', { x: r(x - 3), y: r(top - 3), width: r(Math.max(barWidth - 1, 1) + 6), height: r(barHeight + 6), fill: 'none', stroke: '#000', 'stroke-width': 2.5, class: 'mc-focus-dark', 'aria-hidden': 'true' }),
         ] : [];
-        renderedSeries.push(h('g', { 'data-point-category': categoryIndex, 'data-point-series': seriesIndex, class: 'mc-point', 'aria-hidden': 'true' }, bar, ring));
+        out.push(h('g', { 'data-point-category': categoryIndex, 'data-point-series': seriesIndex, class: 'mc-point', 'aria-hidden': 'true' }, bar, ring));
       });
     } else {
       let path = '';
@@ -322,28 +213,20 @@ function axisChart(options) {
         path += `${pen ? 'L' : 'M'}${r(centerX(categoryIndex))} ${r(y(value))}`;
         pen = true;
       });
-      renderedSeries.push(h('path', { d: path, fill: 'none', class: 'mc-line', 'aria-hidden': 'true' }));
+      out.push(h('path', { d: path, fill: 'none', stroke: seriesColor, 'stroke-width': 2.5, 'stroke-dasharray': DASHES[seriesIndex % DASHES.length], 'stroke-linejoin': 'round', class: 'mc-line', 'aria-hidden': 'true' }));
       (item.values ?? []).forEach((value, categoryIndex) => {
         if (!Number.isFinite(value) || categoryIndex >= labels.length) return;
         const x = centerX(categoryIndex), py = y(value);
         const active = activePoint?.series === seriesIndex && activePoint?.category === categoryIndex;
         pointPositions.set(`${seriesIndex}:${categoryIndex}`, { x, y: py, size: 8, text: `${item.name || `Series ${seriesIndex + 1}`}, ${labels[categoryIndex]}: ${value}` });
-        const marker = markerShape(MARKERS[seriesIndex % MARKERS.length], x, py, active ? 5 : 4, { 'data-marker': MARKERS[seriesIndex % MARKERS.length], class: 'mc-marker' });
-        renderedSeries.push(h('g', { 'data-point-category': categoryIndex, 'data-point-series': seriesIndex, class: 'mc-point', 'aria-hidden': 'true' }, marker, active ? focusRing(x, py, 6) : []));
+        const marker = markerShape(MARKERS[seriesIndex % MARKERS.length], x, py, active ? 5 : 4, seriesColor, { 'data-marker': MARKERS[seriesIndex % MARKERS.length], stroke: 'Canvas', 'stroke-width': 1, class: 'mc-marker' });
+        out.push(h('g', { 'data-point-category': categoryIndex, 'data-point-series': seriesIndex, class: 'mc-point', 'aria-hidden': 'true' }, marker, active ? focusRing(x, py, 6) : []));
       });
     }
-    const style = { ...(dataColorStyle(dataColor) ?? {}), ...seriesStyle };
-    out.push(h('g', { class: seriesClass(seriesIndex, activePoint?.series === seriesIndex), style: Object.keys(style).length ? style : undefined }, renderedSeries));
   });
 
   if (hasLegend) {
-    const entries = series.map((item, index) => ({
-      index,
-      name: item.name ?? `Series ${index + 1}`,
-      color: item.color ?? colors?.[index % (colors?.length || 1)],
-      marker: MARKERS[index % MARKERS.length],
-      active: activePoint?.series === index,
-    }));
+    const entries = series.map((item, index) => ({ name: item.name ?? `Series ${index + 1}`, color: colorAt(index), marker: MARKERS[index % MARKERS.length] }));
     out.push(...legend(entries, width, height - legendRows * 18 + 4).nodes);
   }
 
@@ -352,8 +235,8 @@ function axisChart(options) {
   return out;
 }
 
-function horizontalBarChart(options) {
-  const { data, width, height, idPrefix, activePoint, interactive, colors } = options;
+function horizontalBarChart(options, color) {
+  const { data, width, height, idPrefix, activePoint, interactive } = options;
   const labels = data.labels ?? [];
   const series = data.series ?? [];
   const hasLegend = series.length > 1;
@@ -375,25 +258,24 @@ function horizontalBarChart(options) {
   const x = linear(ticks[0], ticks[ticks.length - 1], margins.left, margins.left + innerWidth);
   const band = innerHeight / Math.max(1, labels.length);
   const centerY = (index) => margins.top + band * (index + 0.5);
-  const out = [patternDefs(idPrefix, series, colors)];
+  const colorAt = (index) => series[index]?.color ?? color(index);
+  const out = [patternDefs(idPrefix, series, colorAt)];
 
   for (const tick of ticks) {
-    const gridClass = tick === 0 ? 'mc-grid mc-baseline' : 'mc-grid';
     out.push(
-      h('line', { x1: r(x(tick)), x2: r(x(tick)), y1: margins.top, y2: margins.top + innerHeight, class: gridClass, 'aria-hidden': 'true' }),
-      h('text', { x: r(x(tick)), y: margins.top + innerHeight + 18, 'text-anchor': 'middle', class: 'mc-axis-label' }, String(tick)));
+      h('line', { x1: r(x(tick)), x2: r(x(tick)), y1: margins.top, y2: margins.top + innerHeight, stroke: 'currentColor', 'stroke-opacity': 0.22, class: 'mc-gridline', 'aria-hidden': 'true' }),
+      h('text', { x: r(x(tick)), y: margins.top + innerHeight + 18, 'text-anchor': 'middle', fill: 'currentColor', class: 'mc-axis-label' }, String(tick)));
   }
 
   const labelStep = Math.max(1, Math.ceil(22 / Math.max(1, band)));
   labels.forEach((label, index) => {
     if (index % labelStep !== 0) return;
-    out.push(h('text', { x: margins.left - 8, y: r(centerY(index)), 'text-anchor': 'end', 'dominant-baseline': 'middle', class: 'mc-axis-label' }, String(label)));
+    out.push(h('text', { x: margins.left - 8, y: r(centerY(index)), 'text-anchor': 'end', 'dominant-baseline': 'middle', fill: 'currentColor', class: 'mc-axis-label' }, String(label)));
   });
 
   const pointPositions = new Map();
   series.forEach((item, seriesIndex) => {
-    const dataColor = item.color ?? colors?.[seriesIndex % (colors?.length || 1)];
-    const renderedSeries = [];
+    const seriesColor = colorAt(seriesIndex);
     const barHeight = Math.max(1, (band * 0.8) / Math.max(1, series.length));
     (item.values ?? []).forEach((value, categoryIndex) => {
       if (!Number.isFinite(value) || categoryIndex >= labels.length) return;
@@ -409,31 +291,21 @@ function horizontalBarChart(options) {
         size: 8,
         text: `${item.name || `Series ${seriesIndex + 1}`}, ${labels[categoryIndex]}: ${value}`,
       });
-      const bar = h('rect', { x: r(barX), y: r(y), width: r(barWidth), height: r(Math.max(barHeight - 1, 1)), rx: 0, class: 'mc-bar' });
+      const bar = h('rect', {
+        x: r(barX), y: r(y), width: r(barWidth), height: r(Math.max(barHeight - 1, 1)),
+        fill: seriesIndex > 1 ? `url(#${idPrefix}-pattern-${seriesIndex})` : seriesColor,
+        class: 'mc-bar',
+      });
       const ring = active ? [
-        h('rect', { x: r(barX - 3), y: r(y - 3), width: r(barWidth + 6), height: r(barHeight + 5), fill: 'none', class: 'mc-focus-light', 'aria-hidden': 'true' }),
-        h('rect', { x: r(barX - 3), y: r(y - 3), width: r(barWidth + 6), height: r(barHeight + 5), fill: 'none', class: 'mc-focus-dark', 'aria-hidden': 'true' }),
+        h('rect', { x: r(barX - 3), y: r(y - 3), width: r(barWidth + 6), height: r(barHeight + 5), fill: 'none', stroke: '#fff', 'stroke-width': 6, class: 'mc-focus-light', 'aria-hidden': 'true' }),
+        h('rect', { x: r(barX - 3), y: r(y - 3), width: r(barWidth + 6), height: r(barHeight + 5), fill: 'none', stroke: '#000', 'stroke-width': 2.5, class: 'mc-focus-dark', 'aria-hidden': 'true' }),
       ] : [];
-      renderedSeries.push(h('g', { 'data-point-category': categoryIndex, 'data-point-series': seriesIndex, class: 'mc-point', 'aria-hidden': 'true' }, bar, ring));
+      out.push(h('g', { 'data-point-category': categoryIndex, 'data-point-series': seriesIndex, class: 'mc-point', 'aria-hidden': 'true' }, bar, ring));
     });
-    const style = {
-      ...(dataColorStyle(dataColor) ?? {}),
-      ...(seriesIndex > 1 ? { '--_mc-series-fill': `url(#${idPrefix}-pattern-${seriesIndex})` } : {}),
-    };
-    out.push(h('g', {
-      class: seriesClass(seriesIndex, activePoint?.series === seriesIndex),
-      style: Object.keys(style).length ? style : undefined,
-    }, renderedSeries));
   });
 
   if (hasLegend) {
-    const entries = series.map((item, index) => ({
-      index,
-      name: item.name ?? `Series ${index + 1}`,
-      color: item.color ?? colors?.[index % (colors?.length || 1)],
-      marker: MARKERS[index % MARKERS.length],
-      active: activePoint?.series === index,
-    }));
+    const entries = series.map((item, index) => ({ name: item.name ?? `Series ${index + 1}`, color: colorAt(index), marker: MARKERS[index % MARKERS.length] }));
     out.push(...legend(entries, width, height - legendRows * 18 + 4).nodes);
   }
 
@@ -442,8 +314,8 @@ function horizontalBarChart(options) {
   return out;
 }
 
-function pieChart(options) {
-  const { data, width, height, idPrefix, activePoint, interactive, colors } = options;
+function pieChart(options, color) {
+  const { data, width, height, idPrefix, activePoint, interactive } = options;
   const labels = data.labels ?? [];
   const values = (data.series?.[0]?.values ?? []).map((value) => Number.isFinite(value) ? Math.max(0, value) : 0);
   const total = values.reduce((sum, value) => sum + value, 0);
@@ -468,33 +340,21 @@ function pieChart(options) {
     const [x0, y0] = point(angle);
     const [x1, y1] = point(angle + sweep);
     const active = activePoint?.category === index;
+    const title = labels[index];
     const percentage = `${(value / total * 100).toFixed(1).replace(/\.0$/, '')}%`;
-    const description = `${labels[index]}: ${format(value)}, ${percentage}`;
+    const description = `${title}: ${format(value)}, ${percentage}`;
     positions.set(`0:${index}`, { x, y, size: 8, text: description });
-    const dataColor = colors?.[index % (colors?.length || 1)];
     const slice = totalNonzero === 1
-      ? h('circle', { cx, cy, r: radius, class: 'mc-slice mc-pie-slice' })
-      : h('path', { d: `M${cx} ${cy}L${x0} ${y0}A${radius} ${radius} 0 ${sweep > Math.PI ? 1 : 0} 1 ${x1} ${y1}Z`, class: 'mc-slice mc-pie-slice' });
+      ? h('circle', { cx, cy, r: radius, fill: color(index), stroke: 'Canvas', 'stroke-width': 2, class: 'mc-pie-slice' })
+      : h('path', { d: `M${cx} ${cy}L${x0} ${y0}A${radius} ${radius} 0 ${sweep > Math.PI ? 1 : 0} 1 ${x1} ${y1}Z`, fill: color(index), stroke: 'Canvas', 'stroke-width': 2, class: 'mc-pie-slice' });
     const ring = active ? (totalNonzero === 1
-      ? [h('circle', { cx, cy, r: radius + 3, fill: 'none', class: 'mc-focus-light', 'aria-hidden': 'true' }), h('circle', { cx, cy, r: radius + 3, fill: 'none', class: 'mc-focus-dark', 'aria-hidden': 'true' })]
-      : [h('path', { d: `M${cx} ${cy}L${x0} ${y0}A${radius} ${radius} 0 ${sweep > Math.PI ? 1 : 0} 1 ${x1} ${y1}Z`, fill: 'none', class: 'mc-focus-light', 'aria-hidden': 'true' }), h('path', { d: `M${cx} ${cy}L${x0} ${y0}A${radius} ${radius} 0 ${sweep > Math.PI ? 1 : 0} 1 ${x1} ${y1}Z`, fill: 'none', class: 'mc-focus-dark', 'aria-hidden': 'true' })]) : [];
-    out.push(h('g', {
-      'data-point-category': index,
-      'data-point-series': 0,
-      class: `mc-point ${seriesClass(index, active)}`,
-      style: dataColorStyle(dataColor),
-      'aria-hidden': 'true',
-    }, slice, ring));
+      ? [h('circle', { cx, cy, r: radius + 3, fill: 'none', stroke: '#fff', 'stroke-width': 6, class: 'mc-focus-light', 'aria-hidden': 'true' }), h('circle', { cx, cy, r: radius + 3, fill: 'none', stroke: '#000', 'stroke-width': 2.5, class: 'mc-focus-dark', 'aria-hidden': 'true' })]
+      : [h('path', { d: `M${cx} ${cy}L${x0} ${y0}A${radius} ${radius} 0 ${sweep > Math.PI ? 1 : 0} 1 ${x1} ${y1}Z`, fill: 'none', stroke: '#fff', 'stroke-width': 6, class: 'mc-focus-light', 'aria-hidden': 'true' }), h('path', { d: `M${cx} ${cy}L${x0} ${y0}A${radius} ${radius} 0 ${sweep > Math.PI ? 1 : 0} 1 ${x1} ${y1}Z`, fill: 'none', stroke: '#000', 'stroke-width': 2.5, class: 'mc-focus-dark', 'aria-hidden': 'true' })]) : [];
+    out.push(h('g', { 'data-point-category': index, 'data-point-series': 0, class: 'mc-point', 'aria-hidden': 'true' }, slice, ring));
     angle += sweep;
   });
 
-  const entries = labels.map((name, index) => ({
-    index,
-    name,
-    color: colors?.[index % (colors?.length || 1)],
-    marker: MARKERS[index % MARKERS.length],
-    active: activePoint?.category === index,
-  }));
+  const entries = labels.map((name, index) => ({ name, color: color(index), marker: MARKERS[index % MARKERS.length] }));
   out.push(...legend(entries, width, height - legendRows * 18 + 4).nodes);
   const active = activePoint && positions.get(`0:${activePoint.category}`);
   if (interactive && active) out.push(tooltip(active, width, height));
@@ -507,59 +367,65 @@ function tooltip(active, width, height) {
   const x = Math.min(Math.max(4, active.x - tooltipWidth / 2), width - tooltipWidth - 4);
   const y = Math.min(Math.max(22, active.y - 14), height - 8);
   return h('g', { role: 'tooltip', class: 'mc-tooltip', 'aria-hidden': 'true' },
-    h('rect', { x: r(x), y: r(y - 20), width: r(tooltipWidth), height: 24, rx: 4, class: 'mc-tooltip-box' }),
-    h('text', { x: r(x + 9), y: r(y - 4), class: 'mc-tooltip-text' }, text));
+    h('rect', { x: r(x), y: r(y - 20), width: r(tooltipWidth), height: 24, rx: 4, fill: 'CanvasText', stroke: 'Canvas', 'stroke-width': 1 }),
+    h('text', { x: r(x + 9), y: r(y - 4), fill: 'Canvas', 'font-size': 12 }, text));
+}
+
+function svgStyle() {
+  return h('style', {}, '.mc-gridline{vector-effect:non-scaling-stroke}.mc-focus-light,.mc-focus-dark,.mc-svg-focus-light,.mc-svg-focus-dark{vector-effect:non-scaling-stroke;pointer-events:none}.mc-svg-focus-light,.mc-svg-focus-dark{opacity:0}svg:focus-visible>.mc-svg-focus-light,svg:focus-visible>.mc-svg-focus-dark{opacity:1}.mc-point{cursor:pointer}.mc-tooltip{pointer-events:auto}.mc-axis-label,.mc-legend-label{font-size:12px}@media(forced-colors:active){.mc-gridline{stroke:CanvasText!important;stroke-opacity:.5!important}.mc-axis-label,.mc-legend-label{fill:CanvasText!important;opacity:1!important}.mc-focus-light,.mc-svg-focus-light{stroke:Canvas!important}.mc-focus-dark,.mc-svg-focus-dark{stroke:Highlight!important}.mc-pie-slice{stroke:Canvas!important}.mc-pattern-background{fill:Canvas!important;stroke:CanvasText!important}.mc-pattern-line{stroke:CanvasText!important}.mc-tooltip rect{fill:Canvas!important;stroke:CanvasText!important}.mc-tooltip text{fill:CanvasText!important}}');
 }
 
 function emptySvg(options, titleId, descId, description) {
-  const { type, width, height, fontSize } = options;
+  const { type, width, height } = options;
   return h('svg', {
-    viewBox: `0 0 ${width} ${height}`, width: '100%', height, class: 'mc-chart',
+    viewBox: `0 0 ${width} ${height}`, width: '100%', height,
     role: 'img', 'aria-labelledby': titleId, 'aria-describedby': descId,
-    'font-size': fontSize,
+    'font-family': 'system-ui, sans-serif', 'font-size': 12,
     'data-chart-type': type, 'data-category-count': 0, 'data-series-count': 0,
     'data-interactive': 'false',
     tabindex: undefined,
   },
+    svgStyle(),
     h('title', { id: titleId }, 'No data'),
     h('desc', { id: descId }, description),
-    h('text', { x: width / 2, y: height / 2, 'text-anchor': 'middle', class: 'mc-axis-label mc-empty-text', role: 'status' }, 'No data'));
+    h('text', { x: width / 2, y: height / 2, 'text-anchor': 'middle', fill: 'currentColor', class: 'mc-axis-label', role: 'status' }, 'No data'));
 }
 
 function buildSvg(options) {
-  const { type, data, width, height, idPrefix, caption, interactive, activePoint, fontSize } = options;
+  const { type, data, width, height, colors, idPrefix, caption, interactive, activePoint } = options;
   const labels = data.labels ?? [];
   const series = data.series ?? [];
   const titleId = `${idPrefix}-title`;
   const descId = `${idPrefix}-description`;
   const title = caption || titleFor(type, series);
   const description = descriptionFor(type, data, options.description);
+  const color = (index) => colors[index % colors.length];
   const hasData = labels.length > 0 && series.length > 0;
   const pieTotal = (series[0]?.values ?? []).reduce((sum, value) => sum + (Number.isFinite(value) ? Math.max(0, value) : 0), 0);
   if (!hasData || (type === 'pie' && !pieTotal)) return emptySvg(options, titleId, descId, description);
   const kids = type === 'pie'
-    ? pieChart(options)
+    ? pieChart(options, color)
     : type === 'horizontal-bar'
-      ? horizontalBarChart(options)
-      : axisChart(options);
+      ? horizontalBarChart(options, color)
+      : axisChart(options, color, titleId, descId);
   return h('svg', {
-    viewBox: `0 0 ${width} ${height}`, width: '100%', height, class: 'mc-chart',
+    viewBox: `0 0 ${width} ${height}`, width: '100%', height,
     role: interactive ? 'group' : 'img',
     'aria-roledescription': interactive ? 'chart' : undefined,
     'aria-labelledby': titleId, 'aria-describedby': descId,
-    'font-size': fontSize,
+    'font-family': 'system-ui, sans-serif', 'font-size': 12,
     'data-chart-type': type, 'data-category-count': labels.length,
     'data-series-count': type === 'pie' ? 1 : series.length,
     'data-interactive': interactive ? 'true' : 'false',
-    'data-has-active': activePoint ? 'true' : undefined,
     tabindex: interactive ? 0 : undefined,
   },
+    svgStyle(),
     h('title', { id: titleId }, title),
     h('desc', { id: descId }, description),
     kids,
     interactive ? [
-      h('rect', { x: 3, y: 3, width: Math.max(1, width - 6), height: Math.max(1, height - 6), fill: 'none', class: 'mc-svg-focus-light', 'aria-hidden': 'true' }),
-      h('rect', { x: 3, y: 3, width: Math.max(1, width - 6), height: Math.max(1, height - 6), fill: 'none', class: 'mc-svg-focus-dark', 'aria-hidden': 'true' }),
+      h('rect', { x: 3, y: 3, width: Math.max(1, width - 6), height: Math.max(1, height - 6), fill: 'none', stroke: '#fff', 'stroke-width': 6, class: 'mc-svg-focus-light', 'aria-hidden': 'true' }),
+      h('rect', { x: 3, y: 3, width: Math.max(1, width - 6), height: Math.max(1, height - 6), fill: 'none', stroke: '#000', 'stroke-width': 2.5, class: 'mc-svg-focus-dark', 'aria-hidden': 'true' }),
     ] : []);
 }
 
@@ -610,7 +476,10 @@ function tableTree(options, title) {
       h('th', { scope: 'row' }, String(label)),
       ...series.map((item) => h('td', {}, format(item.values?.[categoryIndex])))));
   }
-  return h('table', { id: `${idPrefix}-table`, class: `mc-data-table mc-table-${options.table}` },
+  const tableStyle = options.table === 'hidden'
+    ? TABLE_HIDDEN_STYLE
+    : 'width:100%;table-layout:fixed;border-collapse:collapse;overflow-wrap:anywhere';
+  return h('table', { id: `${idPrefix}-table`, class: `mc-data-table mc-table-${options.table}`, style: tableStyle },
     h('caption', {}, tableCaption), head, h('tbody', {}, bodyRows));
 }
 
@@ -628,7 +497,8 @@ function buildFigure(options = {}) {
   const titleId = `${idPrefix}-title`;
   const figureAttrs = {
     id: `${idPrefix}-figure`,
-    class: 'mc-chart mc-figure',
+    class: 'mc-figure',
+    style: 'display:block;width:100%;max-width:100%;margin:0;box-sizing:border-box;position:relative',
     'aria-labelledby': caption ? captionId : titleId,
   };
   const figureChildren = [svg];
@@ -636,6 +506,7 @@ function buildFigure(options = {}) {
   if (normalized.interactive) figureChildren.push(h('span', {
     id: `${idPrefix}-live`, class: 'mc-visually-hidden mc-live-region',
     'aria-live': 'polite', 'aria-atomic': 'true',
+    style: 'position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0',
   }, pointMessage(normalized, activePoint)));
   const table = tableTree(normalized, title);
   if (table) figureChildren.push(table);
@@ -735,12 +606,7 @@ function createDOM(node, parentNamespace = null) {
   const namespace = node.tag === 'svg' || parentNamespace === SVG_NS ? SVG_NS : null;
   const element = namespace ? document.createElementNS(namespace, node.tag) : document.createElement(node.tag);
   for (const [name, value] of Object.entries(node.attrs)) {
-    if (value === undefined || value === null) continue;
-    if (name === 'style' && typeof value === 'object') {
-      for (const [property, propertyValue] of Object.entries(value)) element.style.setProperty(property, String(propertyValue));
-    } else {
-      element.setAttribute(name, String(value));
-    }
+    if (value !== undefined && value !== null) element.setAttribute(name, String(value));
   }
   for (const child of node.children) element.append(createDOM(child, namespace));
   return element;
@@ -760,21 +626,12 @@ function patchDOM(current, node, parentNamespace = null) {
     return createDOM(node, parentNamespace);
   }
 
-  const nextAttributes = new Map(Object.entries(node.attrs).filter(([, value]) => value !== undefined && value !== null));
+  const nextAttributes = new Map(Object.entries(node.attrs).filter(([, value]) => value !== undefined && value !== null).map(([name, value]) => [name, String(value)]));
   for (const attribute of Array.from(current.attributes)) {
     if (!nextAttributes.has(attribute.name)) current.removeAttribute(attribute.name);
   }
   for (const [name, value] of nextAttributes) {
-    if (name === 'style' && typeof value === 'object') {
-      const expected = new Set(Object.keys(value));
-      for (const property of Array.from(current.style)) {
-        if (!expected.has(property)) current.style.removeProperty(property);
-      }
-      for (const [property, propertyValue] of Object.entries(value)) current.style.setProperty(property, String(propertyValue));
-    } else {
-      const stringValue = String(value);
-      if (current.getAttribute(name) !== stringValue) current.setAttribute(name, stringValue);
-    }
+    if (current.getAttribute(name) !== value) current.setAttribute(name, value);
   }
 
   const existingChildren = Array.from(current.childNodes);
@@ -801,7 +658,7 @@ function pointFromEvent(target) {
 }
 
 class MiniChart extends HTMLElement {
-  static observedAttributes = ['type', 'width', 'height', 'font-size', 'data', 'caption', 'description', 'table', 'interactive', 'aria-label', 'aria-labelledby'];
+  static observedAttributes = ['type', 'width', 'height', 'data', 'caption', 'description', 'table', 'interactive', 'aria-label', 'aria-labelledby'];
   #data = null;
   #activePoint = null;
   #queued = false;
@@ -812,9 +669,7 @@ class MiniChart extends HTMLElement {
   constructor() {
     super();
     const root = this.attachShadow({ mode: 'open' });
-    const style = document.createElement('style');
-    style.textContent = `:host{display:block;max-width:100%}${chartCss}`;
-    root.append(style);
+    root.innerHTML = '<style>:host{display:block;max-width:100%}.mc-figure{max-width:100%}svg{display:block;max-width:100%;height:auto}</style>';
     root.addEventListener('keydown', (event) => this.#onKeyDown(event));
     root.addEventListener('pointermove', (event) => this.#onPointer(event));
     root.addEventListener('pointerdown', (event) => this.#onPointer(event));
@@ -862,7 +717,6 @@ class MiniChart extends HTMLElement {
       data,
       width,
       height: Number(this.getAttribute('height')) || 300,
-      fontSize: Number(this.getAttribute('font-size')) || 12,
       caption: this.getAttribute('caption') || undefined,
       description,
       table: this.getAttribute('table') ?? 'hidden',
@@ -891,6 +745,7 @@ class MiniChart extends HTMLElement {
           attrs: {
             id,
             class: 'mc-visually-hidden mc-host-label',
+            style: 'position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0',
           },
           children: [text],
         });
@@ -956,34 +811,18 @@ customElements.define('mini-chart', MiniChart);
 
 
 const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'];
-const regions = ['North', 'South', 'East', 'West'];
 const random = (min, max) => Math.round(min + Math.random() * (max - min));
 const bar = document.querySelector('#revenue');
 const horizontal = document.querySelector('#regions');
 const line = document.querySelector('#visitors');
 const pie = document.querySelector('#sources');
-const themeSets = {
-  default: { '--brand': '#0072b2' },
-  brand: { '--brand': '#009e73', '--mc-color-1': '#0072b2', '--mc-color-2': '#d55e00', '--mc-color-3': '#009e73', '--mc-color-4': '#cc79a7' },
-  'high-contrast': { '--brand': '#0072b2', '--mc-text-color': 'CanvasText', '--mc-axis-text-color': 'CanvasText', '--mc-grid-color': 'CanvasText', '--mc-grid-opacity': '0.5', '--mc-grid-width': '1.5', '--mc-baseline-width': '2', '--mc-focus-color': 'Highlight', '--mc-focus-width': '3px' },
-};
-const themeProperties = new Set(Object.values(themeSets).flatMap((theme) => Object.keys(theme)));
-function applyTheme(name) {
-  const rootStyle = document.documentElement.style;
-  for (const property of themeProperties) rootStyle.removeProperty(property);
-  for (const [property, value] of Object.entries(themeSets[name] ?? themeSets.default)) rootStyle.setProperty(property, value);
-}
-const gridDashes = { solid: 'none', dashed: '4 4', dotted: '1 3' };
-document.querySelector('#theme').addEventListener('change', (event) => applyTheme(event.target.value));
-document.querySelector('#grid-style').addEventListener('change', (event) => document.documentElement.style.setProperty('--mc-grid-dash', gridDashes[event.target.value]));
-applyTheme('default');
 function updateData() {
   bar.data = { labels: months, series: [{ name: 'Revenue', values: months.map(() => random(20, 90)) }] };
   horizontal.data = {
-    labels: regions,
+    labels: ['North', 'South', 'East', 'West'],
     series: [
-      { name: 'Revenue', values: regions.map(() => random(30, 95)), color: 'var(--brand)' },
-      { name: 'Costs', values: regions.map(() => random(10, 45)) },
+      { name: 'Revenue', values: ['North', 'South', 'East', 'West'].map(() => random(30, 95)) },
+      { name: 'Costs', values: ['North', 'South', 'East', 'West'].map(() => random(10, 45)) },
     ],
   };
   line.data = { labels: months, series: [

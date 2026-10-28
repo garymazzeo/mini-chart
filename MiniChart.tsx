@@ -1,17 +1,17 @@
 // React adapter for the framework-agnostic chart tree.
 import {
-  Fragment,
   createElement,
   useEffect,
   useId,
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type KeyboardEvent,
   type PointerEvent,
   type ReactNode,
 } from 'react';
-import { buildFigure, chartCss, clampPoint, nextPoint, pointDimensions, type BuildChartOptions, type ChartData, type ChartType, type SvgNode } from './core.js';
+import { buildFigure, clampPoint, nextPoint, pointDimensions, type BuildChartOptions, type ChartData, type ChartType, type SvgNode } from './core.js';
 
 export type TableMode = 'hidden' | 'visible' | 'none';
 
@@ -20,21 +20,34 @@ export interface ChartProps {
   data?: ChartData;
   width?: number;
   height?: number;
-  fontSize?: number;
   colors?: string[];
   caption?: string;
   description?: string;
   table?: TableMode;
   interactive?: boolean;
   idPrefix?: string;
-  injectStyles?: boolean;
 }
 
 function camel(key: string): string {
-  if (key.startsWith('--')) return key;
   if (/^(aria|data)-/.test(key)) return key;
   if (key === 'class') return 'className';
   return key.replace(/-([a-z])/g, (_, character: string) => character.toUpperCase());
+}
+
+function parseStyle(value: string): CSSProperties {
+  const style: Record<string, string> = {};
+  for (const declaration of value.split(';')) {
+    const separator = declaration.indexOf(':');
+    if (separator < 0) continue;
+    const rawName = declaration.slice(0, separator).trim();
+    const rawValue = declaration.slice(separator + 1).trim();
+    if (!rawName || !rawValue) continue;
+    const name = rawName.startsWith('--')
+      ? rawName
+      : rawName.replace(/-([a-z])/g, (_, character: string) => character.toUpperCase());
+    style[name] = rawValue;
+  }
+  return style as CSSProperties;
 }
 
 function pointFromEvent(target: EventTarget | null): { category: number; series: number } | null {
@@ -69,7 +82,7 @@ function toReact(
   const props: Record<string, unknown> = key === undefined ? {} : { key };
   for (const [name, value] of Object.entries(node.attrs)) {
     if (value === undefined || value === null) continue;
-    props[camel(name)] = value;
+    props[camel(name)] = name === 'style' && typeof value === 'string' ? parseStyle(value) : value;
   }
   if (node.tag === 'figure') props.ref = figureRef;
   if (node.tag === 'svg') {
@@ -85,14 +98,12 @@ export function Chart({
   data = { labels: [], series: [] },
   width = 480,
   height = 300,
-  fontSize = 12,
   colors,
   caption,
   description,
   table = 'hidden',
   interactive = true,
   idPrefix: requestedIdPrefix,
-  injectStyles = true,
 }: ChartProps) {
   const reactId = useId();
   const uniqueId = reactId.replace(/[^A-Za-z0-9_-]/g, '');
@@ -102,9 +113,9 @@ export function Chart({
   const [activePoint, setActivePoint] = useState<{ category: number; series: number } | null>(null);
   const actualWidth = observedWidth || width;
   const options: BuildChartOptions & { idPrefix: string; activePoint: typeof activePoint } = {
-    type, data, width: actualWidth, height, fontSize, colors, caption, description, table, interactive, idPrefix, activePoint,
+    type, data, width: actualWidth, height, colors, caption, description, table, interactive, idPrefix, activePoint,
   };
-  const tree = useMemo(() => buildFigure(options), [type, data, actualWidth, height, fontSize, colors, caption, description, table, interactive, idPrefix, activePoint]);
+  const tree = useMemo(() => buildFigure(options), [type, data, actualWidth, height, colors, caption, description, table, interactive, idPrefix, activePoint]);
 
   useEffect(() => {
     const figure = figureRef.current;
@@ -143,8 +154,5 @@ export function Chart({
     },
   };
 
-  const figure = toReact(tree, undefined, figureRef, handlers);
-  return injectStyles
-    ? createElement(Fragment, null, createElement('style', null, chartCss), figure)
-    : figure;
+  return toReact(tree, undefined, figureRef, handlers);
 }
