@@ -17,7 +17,7 @@ function Fixture() {
     labels: ['Jan', 'Feb', 'Mar'],
     series: [
       { name: 'Revenue', values: [20, 40, 90] },
-      { name: 'Costs', values: [6, 4, 12], color: 'var(--brand)' },
+      { name: 'Costs', values: [6, 4, 12], color: 'var(--mc-color-1)' },
     ],
   });
   window.__setReactPatternData = () => setData({

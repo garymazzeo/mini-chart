@@ -174,7 +174,7 @@ test('series classes wrap at eight and data colors are emitted as safe style obj
   const series = Array.from({ length: 10 }, (_, index) => ({
     name: `Series ${index + 1}`,
     values: [index + 1],
-    ...(index === 0 ? { color: 'var(--brand)' } : {}),
+    ...(index === 0 ? { color: 'var(--mc-color-8)' } : {}),
   }));
   const chart = buildChart({
     data: { labels: ['A'], series },
@@ -186,7 +186,7 @@ test('series classes wrap at eight and data colors are emitted as safe style obj
   assert.deepEqual(groups.slice(0, 10).map((node) => attr(node, 'class').split(' ')[1]), [
     'mc-s0', 'mc-s1', 'mc-s2', 'mc-s3', 'mc-s4', 'mc-s5', 'mc-s6', 'mc-s7', 'mc-s0', 'mc-s1',
   ]);
-  assert.deepEqual(attr(groups[0], 'style'), { '--_mc-data-color': 'var(--brand)' });
+  assert.deepEqual(attr(groups[0], 'style'), { '--_mc-data-color': 'var(--mc-color-8)' });
   assert.deepEqual(attr(groups[1], 'style'), { '--_mc-data-color': 'var(--option-two)' });
   assert.equal(attr(groups[2], 'style')['--_mc-data-color'], 'var(--option-one)');
   assert.equal(attr(groups[2], 'style')['--_mc-series-fill'], 'url(#colors-pattern-2)');
