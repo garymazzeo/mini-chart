@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { PALETTE, buildChart, buildFigure, clampPoint, nextPoint, pointDimensions } from '../core.js';
+import { PALETTE, buildChart, buildFigure, chartCss, clampPoint, nextPoint, pointDimensions } from '../core.js';
 
 const data = {
   labels: ['Jan', 'Feb', 'Mar'],
@@ -40,7 +40,7 @@ test('buildFigure exposes every series value in semantic table cells', () => {
   assert.deepEqual(cellText(rows[1]), ['Jan', '20', '6']);
   assert.deepEqual(cellText(rows[2]), ['Feb', '', '4']);
   assert.deepEqual(cellText(rows[3]), ['Mar', '90', '']);
-  assert.match(attr(table, 'style'), /clip/);
+  assert.match(attr(table, 'class'), /mc-table-hidden/);
 });
 
 test('pie table includes value and exact percentage for each label', () => {
@@ -119,8 +119,8 @@ test('series use non-hue cues and pie slices have theme-aware separators', () =>
     series: Array.from({ length: 7 }, (_, index) => ({ name: `S${index + 1}`, values: [index + 1, index + 2] })),
   };
   const line = buildChart({ type: 'line', data: manySeries });
-  const linePaths = nodes(line, 'path').filter((node) => attr(node, 'class') === 'mc-line');
-  assert.equal(new Set(linePaths.map((node) => attr(node, 'stroke-dasharray'))).size, 7);
+  const lineGroups = nodes(line, 'g').filter((node) => attr(node, 'class')?.startsWith('mc-series mc-s'));
+  assert.equal(new Set(lineGroups.map((node) => attr(node, 'style')?.['--_mc-series-dash'])).size, 7);
   const markers = nodes(line, 'g').filter((node) => attr(node, 'class') === 'mc-point' && attr(node, 'data-point-category') === 0).map((node) => node.children[0]);
   assert.equal(new Set(markers.map((node) => attr(node, 'data-marker'))).size, 7);
 
@@ -130,7 +130,25 @@ test('series use non-hue cues and pie slices have theme-aware separators', () =>
   assert.equal(new Set(patterns.map((pattern) => attr(nodes(pattern, 'path')[0], 'd'))).size, 5);
 
   const pie = buildChart({ type: 'pie', data: { labels: ['A', 'B'], series: [{ values: [1, 2] }] } });
-  assert.ok(nodes(pie, 'path').filter((node) => attr(node, 'class') === 'mc-pie-slice').every((node) => attr(node, 'stroke') === 'Canvas' && attr(node, 'stroke-width') === 2));
+  assert.equal(nodes(pie, 'path').filter((node) => attr(node, 'class')?.split(' ').includes('mc-slice')).length, 2);
+  assert.match(chartCss, /--_mc-surface: var\(--mc-surface, Canvas\)/);
+  assert.match(chartCss, /--_mc-slice-gap: var\(--mc-slice-gap, 1\.5px\)/);
+});
+
+test('bar series retain generated hatch patterns through CSS custom properties', () => {
+  const seriesData = {
+    labels: ['A'],
+    series: Array.from({ length: 4 }, (_, index) => ({ name: `S${index + 1}`, values: [index + 1] })),
+  };
+  for (const type of ['bar', 'horizontal-bar']) {
+    const chart = buildChart({ type, data: seriesData, idPrefix: 'pattern-regression' });
+    const groups = nodes(chart, 'g').filter((node) => attr(node, 'class')?.startsWith('mc-series mc-s'));
+    const seriesWithPattern = groups[2];
+    assert.equal(attr(seriesWithPattern, 'style')?.['--_mc-series-fill'], 'url(#pattern-regression-pattern-2)');
+    assert.equal(attr(groups[3], 'style')?.['--_mc-series-fill'], 'url(#pattern-regression-pattern-3)');
+    assert.ok(nodes(chart, 'pattern').some((pattern) => attr(pattern, 'id') === 'pattern-regression-pattern-2'));
+  }
+  assert.match(chartCss, /\.mc-bar \{ fill: var\(--_mc-series-fill, var\(--_mc-c\)\);/);
 });
 
 test('horizontal-bar draws grouped bars across values and categories down the axis', () => {
@@ -150,6 +168,59 @@ test('horizontal-bar draws grouped bars across values and categories down the ax
   assert.ok(Number(attr(bars[0], 'width')) > Number(attr(bars[0], 'height')));
   assert.ok(Number(attr(north, 'y')) < Number(attr(south, 'y')));
   assert.equal(attr(north, 'text-anchor'), 'end');
+});
+
+test('series classes wrap at eight and data colors are emitted as safe style objects', () => {
+  const series = Array.from({ length: 10 }, (_, index) => ({
+    name: `Series ${index + 1}`,
+    values: [index + 1],
+    ...(index === 0 ? { color: 'var(--brand)' } : {}),
+  }));
+  const chart = buildChart({
+    data: { labels: ['A'], series },
+    colors: ['var(--option-one)', 'var(--option-two)'],
+    idPrefix: 'colors',
+  });
+  const groups = nodes(chart, 'g').filter((node) => attr(node, 'class')?.startsWith('mc-series '));
+  assert.equal(groups.length, 10);
+  assert.deepEqual(groups.slice(0, 10).map((node) => attr(node, 'class').split(' ')[1]), [
+    'mc-s0', 'mc-s1', 'mc-s2', 'mc-s3', 'mc-s4', 'mc-s5', 'mc-s6', 'mc-s7', 'mc-s0', 'mc-s1',
+  ]);
+  assert.deepEqual(attr(groups[0], 'style'), { '--_mc-data-color': 'var(--brand)' });
+  assert.deepEqual(attr(groups[1], 'style'), { '--_mc-data-color': 'var(--option-two)' });
+  assert.equal(attr(groups[2], 'style')['--_mc-data-color'], 'var(--option-one)');
+  assert.equal(attr(groups[2], 'style')['--_mc-series-fill'], 'url(#colors-pattern-2)');
+  for (const node of walk(chart)) {
+    for (const key of ['fill', 'stroke', 'color']) assert.ok(attr(node, key) === undefined || attr(node, key) === 'none');
+    assert.ok(attr(node, 'style') === undefined || typeof attr(node, 'style') === 'object');
+  }
+});
+
+test('chartCss is the sole default source for all public style properties', () => {
+  const properties = [
+    ...Array.from({ length: 8 }, (_, index) => `--mc-color-${index + 1}`),
+    '--mc-text-color', '--mc-axis-text-color', '--mc-font-family', '--mc-grid-color', '--mc-grid-opacity',
+    '--mc-grid-width', '--mc-grid-dash', '--mc-baseline-color', '--mc-baseline-width', '--mc-baseline-dash',
+    '--mc-line-width', '--mc-point-radius', '--mc-bar-radius', '--mc-surface', '--mc-slice-gap',
+    '--mc-focus-color', '--mc-focus-width', '--mc-tooltip-bg', '--mc-tooltip-color', '--mc-tooltip-border',
+    '--mc-inactive-opacity',
+  ];
+  for (const property of properties) {
+    assert.equal(chartCss.match(new RegExp(`var\\(${property},`, 'g'))?.length ?? 0, 1, `${property} has one CSS fallback`);
+  }
+  assert.equal(PALETTE.length, 8);
+  assert.deepEqual(PALETTE.slice(0, 7), ['#0072b2', '#d55e00', '#009e73', '#cc79a7', '#a06100', '#007f86', '#8c6d31']);
+  assert.ok(chartCss.includes('.mc-chart .mc-grid'));
+  const chart = buildChart({ data, colors: ['var(--theme-a)'] });
+  for (const node of walk(chart)) {
+    for (const key of ['fill', 'stroke', 'color']) assert.ok(attr(node, key) === undefined || attr(node, key) === 'none');
+    assert.ok(attr(node, 'style') === undefined || typeof attr(node, 'style') === 'object');
+  }
+});
+
+test('fontSize is an explicit JS layout option', () => {
+  const chart = buildChart({ data, fontSize: 18 });
+  assert.equal(attr(chart, 'font-size'), 18);
 });
 
 test('every default series color meets 3:1 on light and dark backgrounds', () => {
