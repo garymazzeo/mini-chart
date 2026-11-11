@@ -82,6 +82,7 @@ const reactSource = await source('MiniChart.tsx');
 const reactOutput = await transform(reactSource, { loader: 'tsx', format: 'esm', target: 'es2022', jsx: 'automatic' });
 const reactImports = reactOutput.code.match(/^import\b[\s\S]*?from\s+["']react["'];/m)?.[0] ?? '';
 const wrapper = reactOutput.code
+  .replace(/^['"]use client['"];\s*/m, '')
   .replace(/^import\b[\s\S]*?;[ \t]*\n?/gm, '')
   .replace(/^export\s+/gm, '');
 const reactPage = `'use client';

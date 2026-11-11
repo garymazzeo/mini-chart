@@ -1,3 +1,5 @@
+'use client';
+
 // React adapter for the framework-agnostic chart tree.
 import {
   createElement,
@@ -31,6 +33,7 @@ export interface ChartProps {
 function camel(key: string): string {
   if (/^(aria|data)-/.test(key)) return key;
   if (key === 'class') return 'className';
+  if (key === 'tabindex') return 'tabIndex';
   return key.replace(/-([a-z])/g, (_, character: string) => character.toUpperCase());
 }
 

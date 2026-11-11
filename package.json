@@ -1,20 +1,94 @@
 {
-  "name": "mini-chart",
-  "private": true,
+  "name": "@garymazzeo/mini-chart",
+  "version": "0.1.0",
+  "description": "Accessible SVG charts with a framework-agnostic core, custom element, and React wrapper.",
+  "license": "Unlicense",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/garymazzeo/mini-chart.git"
+  },
+  "bugs": {
+    "url": "https://github.com/garymazzeo/mini-chart/issues"
+  },
+  "homepage": "https://garymazzeo.github.io/mini-chart/",
+  "keywords": [
+    "charts",
+    "svg",
+    "react",
+    "web-components",
+    "accessibility"
+  ],
   "type": "module",
+  "main": "./core.js",
+  "module": "./core.js",
+  "types": "./core.d.ts",
+  "typesVersions": {
+    "*": {
+      "element": ["mini-chart.d.ts"],
+      "react": ["dist/MiniChart.d.ts"]
+    }
+  },
+  "exports": {
+    ".": {
+      "types": "./core.d.ts",
+      "import": "./core.js"
+    },
+    "./element": {
+      "types": "./mini-chart.d.ts",
+      "import": "./mini-chart.js"
+    },
+    "./react": {
+      "types": "./dist/MiniChart.d.ts",
+      "import": "./dist/MiniChart.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "core.js",
+    "core.d.ts",
+    "mini-chart.js",
+    "mini-chart.d.ts",
+    "dist/MiniChart.js",
+    "dist/MiniChart.d.ts",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": [
+    "./mini-chart.js"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "test": "node --test test/core.test.js test/browser.test.js",
     "test:unit": "node --test test/core.test.js",
     "test:browser": "node --test test/browser.test.js",
     "build:demos": "node scripts/assemble-demos.mjs",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build": "node scripts/build-package.mjs",
+    "prepack": "npm run build",
+    "prepublishOnly": "npm run build && npm test && npm run typecheck && npm run test:pack -- --skip-build",
+    "test:pack": "node scripts/test-pack.mjs"
+  },
+  "peerDependencies": {
+    "react": ">=18"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
   },
   "devDependencies": {
+    "@arethetypeswrong/cli": "^0.18.5",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "axe-core": "^4.14.0",
     "esbuild": "^0.28.2",
     "playwright": "^1.64.1",
+    "publint": "^0.3.25",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
     "typescript": "^7.0.2"

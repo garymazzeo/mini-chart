@@ -1,6 +1,6 @@
 # mini-chart
 
-A tiny JavaScript charting library for bar, line, and pie charts. It renders SVG and includes both a browser custom element and a React component, backed by a framework-agnostic chart builder.
+A tiny JavaScript charting library for vertical and horizontal bar, line, and pie charts. It renders SVG and includes both a browser custom element and a React component, backed by a framework-agnostic chart builder.
 
 ## Features
 
@@ -13,13 +13,19 @@ A tiny JavaScript charting library for bar, line, and pie charts. It renders SVG
 
 ## Install
 
-Use the source files directly; the core and custom element have no runtime dependencies. Install the development dependencies to run the checks:
+Install the core and custom-element package:
 
 ```sh
-npm install
+npm install @garymazzeo/mini-chart
 ```
 
-The custom element uses native JavaScript modules and does not require React. The React wrapper requires React, TypeScript declarations, and a bundler configured for TSX in the consuming application.
+The package is ESM-only. The core and custom element have no runtime dependencies. React is an optional peer dependency; install React 18 or newer only if you use the React entry point:
+
+```sh
+npm install react
+```
+
+CommonJS `require()` is not a supported entry mode; use ESM `import` (or dynamic `import()` from a CommonJS application).
 
 ## Data format
 
@@ -41,14 +47,14 @@ Each series may include an optional `name` and `values` array. `labels` and each
 
 ### Browser custom element
 
-Load `mini-chart.js` as a module, add a `<mini-chart>` element, then assign its `data` property:
+Import the element entry once, add a `<mini-chart>`, then assign its `data` property:
 
 ```html
-<script type="module" src="./mini-chart.js"></script>
-
 <mini-chart id="sales-chart" type="bar" width="480" height="300"></mini-chart>
 
 <script type="module">
+  import '@garymazzeo/mini-chart/element';
+
   const chart = document.querySelector('#sales-chart');
   chart.data = {
     labels: ['Jan', 'Feb', 'Mar'],
@@ -57,7 +63,7 @@ Load `mini-chart.js` as a module, add a `<mini-chart>` element, then assign its 
 </script>
 ```
 
-The element also accepts JSON data through a `data` attribute:
+The element also accepts JSON data through a `data` attribute. Its module is safe to import during server rendering: on the server it does not access the DOM or register the element; in a browser it registers `<mini-chart>` once.
 
 ```html
 <mini-chart
@@ -70,10 +76,10 @@ Supported element attributes are `type`, `width`, `height`, `data`, `caption`, `
 
 ### React
 
-Import `Chart` from `MiniChart.tsx` in a React application with TSX support:
+Import `Chart` from the compiled React entry point:
 
 ```jsx
-import { Chart } from './MiniChart';
+import { Chart } from '@garymazzeo/mini-chart/react';
 
 const data = {
   labels: ['Jan', 'Feb', 'Mar'],
@@ -94,6 +100,8 @@ export function SalesChart() {
 
 `Chart` accepts `type`, `data`, `width`, `height`, `colors`, `caption`, `description`, `table`, `interactive`, and optional `idPrefix` props. React's `useId()` is appended to `idPrefix` so IDs remain unique per instance. Defaults are `type="bar"`, `width={480}`, `height={300}`, `table="hidden"`, and `interactive`. `table` can be `hidden`, `visible`, or `none`; `none` requires a non-empty `description`. Keep the `data` object reference stable between renders (or memoize it) to benefit from the component's memoization.
 
+In Next.js, import the React entry from a client component; the compiled wrapper preserves the `'use client'` directive. Importing the custom-element entry on the server is safe and does not attempt DOM registration until it runs in a browser.
+
 ### Accessibility options
 
 Both wrappers render a `<figure>` with a visible caption when supplied, accessible SVG title/description, and a semantic data table. The default visually clipped table remains in the accessibility tree. In interactive mode, focus the chart SVG and use the arrow keys to explore data, Home/End to move to category boundaries, and Escape to dismiss the tooltip. The table remains available as a complete text alternative.
@@ -107,7 +115,15 @@ For the custom element, `caption`, `description`, `table`, and `interactive` are
 - `line` — lines with point markers; supports multiple series
 - `pie` — slices from the first series only
 
-The chart builder is exported from `core.js` as `buildChart` and can be used directly by JavaScript integrations. It returns a plain SVG element tree rather than a DOM node.
+The framework-agnostic chart builder is exported from the package root:
+
+```js
+import { buildChart } from '@garymazzeo/mini-chart';
+
+const svgTree = buildChart({ type: 'bar', data });
+```
+
+It returns a plain SVG element tree rather than a DOM node. Its full options and return types are exported from the same entry point.
 
 ## Run the demo
 
@@ -125,12 +141,14 @@ Then visit <http://localhost:8000/demo.html>. The demo shows all four chart vari
 
 ```sh
 npx playwright install chromium
+npm run build
 npm run build:demos
 npm test
 npm run typecheck
+npm run test:pack
 ```
 
-The automated suite includes Node unit tests, Playwright interaction checks, and axe-core checks. Manual assistive-technology and browser-zoom checks are listed in [ACCESSIBILITY.md](ACCESSIBILITY.md).
+The automated suite includes Node unit tests, Playwright interaction checks, axe-core checks, and an install-from-tarball smoke test. Manual assistive-technology and browser-zoom checks are listed in [ACCESSIBILITY.md](ACCESSIBILITY.md).
 
 ## License
 
