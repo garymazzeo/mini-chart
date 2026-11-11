@@ -577,6 +577,7 @@ function nextPoint(state, key, dims) {
 function camel(key) {
   if (/^(aria|data)-/.test(key)) return key;
   if (key === "class") return "className";
+  if (key === "tabindex") return "tabIndex";
   return key.replace(/-([a-z])/g, (_, character) => character.toUpperCase());
 }
 function parseStyle(value) {

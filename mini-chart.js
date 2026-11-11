@@ -60,6 +60,7 @@ function pointFromEvent(target) {
   };
 }
 
+if (typeof HTMLElement !== 'undefined' && typeof customElements !== 'undefined') {
 class MiniChart extends HTMLElement {
   static observedAttributes = ['type', 'width', 'height', 'data', 'caption', 'description', 'table', 'interactive', 'aria-label', 'aria-labelledby'];
   #data = null;
@@ -210,4 +211,5 @@ class MiniChart extends HTMLElement {
   }
 }
 
-customElements.define('mini-chart', MiniChart);
+if (!customElements.get('mini-chart')) customElements.define('mini-chart', MiniChart);
+}
