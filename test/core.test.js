@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { PALETTE, buildChart, buildFigure, clampPoint, nextPoint, pointDimensions } from '../core.js';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { STYLE, buildChart, buildFigure, clampPoint, nextPoint, pointDimensions } from '../core.js';
 
 const data = {
   labels: ['Jan', 'Feb', 'Mar'],
@@ -30,6 +32,7 @@ function contrast(a, b) {
   const [lighter, darker] = [luminance(a), luminance(b)].sort((x, y) => y - x);
   return (lighter + 0.05) / (darker + 0.05);
 }
+function fallbackColor(entry) { return entry.startsWith('var(') ? entry.match(/^var\([^,]+,\s*(#[\da-f]{6})\)$/i)?.[1] : entry; }
 
 test('buildFigure exposes every series value in semantic table cells', () => {
   const figure = buildFigure({ data, caption: 'Monthly results' });
@@ -152,9 +155,104 @@ test('horizontal-bar draws grouped bars across values and categories down the ax
   assert.equal(attr(north, 'text-anchor'), 'end');
 });
 
+test('STYLE palette has three token fallbacks followed by five fixed colors', () => {
+  assert.ok(Object.isFrozen(STYLE));
+  assert.ok(Object.isFrozen(STYLE.palette));
+  assert.equal(STYLE.palette.length, 8);
+  assert.deepEqual(STYLE.palette.slice(0, 3).map(fallbackColor), ['#0072b2', '#d55e00', '#009e73']);
+  assert.deepEqual(STYLE.palette.slice(3), ['#cc79a7', '#a06100', '#007f86', '#8c6d31', '#4c78a8']);
+  const tokenNames = STYLE.palette.slice(0, 3).map((entry) => entry.match(/^var\((--[^,]+),/)?.[1]);
+  assert.equal(new Set(tokenNames).size, 3);
+  assert.deepEqual(tokenNames.map((name) => name?.split('-').at(-1)), ['primary', 'secondary', 'accent']);
+});
+
+test('series color overrides colors, colors cycle, and pie colors follow slice index', () => {
+  const chart = buildChart({
+    data: {
+      labels: ['A'],
+      series: [
+        { name: 'Explicit', values: [1], color: 'var(--series-color, #123456)' },
+        { name: 'First option', values: [2] },
+        { name: 'Second option', values: [3] },
+        { name: 'Cycles', values: [4] },
+      ],
+    },
+    colors: ['#135724', '#246813'],
+    type: 'line',
+  });
+  const lines = nodes(chart, 'path').filter((node) => attr(node, 'class') === 'mc-line');
+  assert.deepEqual(lines.map((line) => attr(line, 'stroke')), ['var(--series-color, #123456)', '#246813', '#135724', '#246813']);
+
+  const pie = buildChart({
+    type: 'pie',
+    data: { labels: ['A', 'B'], series: [{ values: [1, 2], color: '#abcdef' }] },
+    colors: ['#135724', '#246813'],
+  });
+  assert.deepEqual(nodes(pie, 'path').filter((node) => attr(node, 'class') === 'mc-pie-slice').map((slice) => attr(slice, 'fill')), ['#135724', '#246813']);
+});
+
+test('legend label colors match their swatches for series and pie slices', () => {
+  const chart = buildChart({ data: { labels: ['A'], series: [{ name: 'One', values: [1] }, { name: 'Two', values: [2] }] }, colors: ['#123456', '#654321'] });
+  const seriesLegend = nodes(chart, 'g').filter((node) => attr(node, 'class') === 'mc-legend-item');
+  assert.deepEqual(seriesLegend.map((item) => [attr(item.children[0], 'fill'), attr(item.children[1], 'fill')]), [['#123456', '#123456'], ['#654321', '#654321']]);
+
+  const pie = buildChart({ type: 'pie', data: { labels: ['A', 'B'], series: [{ values: [1, 2] }] }, colors: ['#abcdef', '#fedcba'] });
+  const pieLegend = nodes(pie, 'g').filter((node) => attr(node, 'class') === 'mc-legend-item');
+  assert.deepEqual(pieLegend.map((item) => [attr(item.children[0], 'fill'), attr(item.children[1], 'fill')]), [['#abcdef', '#abcdef'], ['#fedcba', '#fedcba']]);
+});
+
+test('gridStyle controls non-baseline gridlines and leaves the zero baseline solid', () => {
+  const data = { labels: ['A', 'B'], series: [{ values: [0, 10] }] };
+  for (const [gridStyle, expected] of [['solid', 'none'], ['dashed', STYLE.grid.dash], ['unknown', 'none']]) {
+    const chart = buildChart({ type: 'line', data, gridStyle });
+    const lines = nodes(chart, 'line').filter((node) => String(attr(node, 'class')).includes('mc-gridline'));
+    const baseline = lines.find((line) => String(attr(line, 'class')).includes('mc-baseline'));
+    assert.ok(baseline, 'zero tick has a baseline marker');
+    assert.equal(attr(baseline, 'stroke-dasharray'), 'none');
+    assert.ok(lines.filter((line) => line !== baseline).every((line) => attr(line, 'stroke-dasharray') === expected));
+  }
+});
+
+test('STYLE values drive SVG paint and fontSize remains an option', () => {
+  const chart = buildChart({ type: 'line', data, fontSize: 17 });
+  const line = nodes(chart, 'path').find((node) => attr(node, 'class') === 'mc-line');
+  const marker = nodes(chart, 'circle').find((node) => attr(node, 'class') === 'mc-marker');
+  assert.equal(attr(chart, 'font-family'), STYLE.fontFamily);
+  assert.equal(attr(chart, 'font-size'), 17);
+  assert.equal(attr(line, 'stroke-width'), STYLE.line.width);
+  assert.equal(attr(marker, 'r'), STYLE.point.radius);
+  assert.equal(attr(nodes(buildChart({ data }), 'rect').find((node) => attr(node, 'class') === 'mc-bar'), 'rx'), STYLE.bar.radius);
+});
+
+test('removed styling system is absent and token names are centralized', () => {
+  const files = [
+    'core.js', 'core.d.ts', 'MiniChart.tsx', 'mini-chart.js', 'mini-chart.d.ts',
+    'scripts/assemble-demos.mjs', 'scripts/test-pack.mjs', 'test/core.test.js',
+    'test/browser.test.js', 'test/types.test.tsx', 'README.md', 'ACCESSIBILITY.md',
+    'demo.html', 'docs/index.html', 'page.jsx',
+  ];
+  const forbidden = ['--' + 'mc-', '--_' + 'mc-', 'chart' + 'Css', 'inject' + 'Styles'];
+  const contents = new Map(files.map((file) => [file, readFileSync(resolve(import.meta.dirname, '..', file), 'utf8')]));
+  for (const token of forbidden) {
+    assert.ok([...contents.values()].every((content) => !content.includes(token)), `${token} must be absent`);
+  }
+  const marker = '--' + 'm-';
+  const core = contents.get('core.js');
+  const styleStart = core.indexOf('export const STYLE');
+  const styleEnd = core.indexOf('\n});', styleStart);
+  for (let index = core.indexOf(marker); index >= 0; index = core.indexOf(marker, index + marker.length)) {
+    assert.ok(index >= styleStart && index < styleEnd, 'design tokens are defined only inside STYLE');
+  }
+  const onlyStyleOrDocs = new Set(['core.js', 'scripts/assemble-demos.mjs', 'README.md', 'demo.html', 'docs/index.html', 'page.jsx']);
+  for (const [file, content] of contents) {
+    if (!onlyStyleOrDocs.has(file)) assert.ok(!content.includes(marker), `${file} must not define design tokens`);
+  }
+});
+
 test('every default series color meets 3:1 on light and dark backgrounds', () => {
-  assert.ok(PALETTE.length >= 3);
-  for (const color of PALETTE) {
+  const fallbackColors = STYLE.palette.map(fallbackColor).filter(Boolean);
+  assert.equal(fallbackColors.length, STYLE.palette.length);
+  for (const color of fallbackColors) {
     assert.ok(contrast(color, '#FFFFFF') >= 3, `${color} on white`);
     assert.ok(contrast(color, '#14181B') >= 3, `${color} on dark`);
   }

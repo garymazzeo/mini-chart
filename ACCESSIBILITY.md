@@ -6,12 +6,14 @@
 - Static charts (`interactive: false`) use `role="img"` with `aria-labelledby` and `aria-describedby`. Interactive charts use a single focusable SVG with `role="group"` and `aria-roledescription="chart"`; a two-layer outline is visible on initial keyboard focus and around the active point. Data marks remain decorative, while axis labels and the legend remain in the tree.
 - Interactive movement is announced through a visually hidden polite live region. The implementation intentionally does not use `aria-activedescendant`: support for it on SVG groups is inconsistent, while the stable SVG focus target plus live region works in the browser tests and leaves the table as a complete alternative.
 - Arrow keys move across categories and series; Home and End move to category boundaries; Escape clears the active point and tooltip. Hover and touch pointer-down show the same persistent tooltip. Focus remains on the SVG when data is updated.
-- The default palette has computed contrast of at least 3:1 against both white and `#14181b`. Line dash patterns, marker shapes, bar hatches beyond two series, and pie slice separators provide non-hue cues. The SVG includes forced-colors CSS using system colors.
+- Line dash patterns, marker shapes, bar hatches beyond two series, and pie slice separators provide non-hue cues. The fallback palette has at least 3:1 contrast as graphical marks against white and `#14181b`; legend labels intentionally match their swatch colors, so some colors are below the 4.5:1 text target. The page author is responsible for contrast when overriding the design tokens or passing custom colors; see the contrast ratios in `core.js` beside the palette.
+- A private SVG stylesheet is limited to `:focus-visible` root-ring visibility and forced-colors overrides. Focus rings, tooltip system colors, and grid/text forced colors come from `STYLE`; the data table and live region remain visually clipped inline.
+- There are no animated chart transitions or inactive-series dimming in the current implementation, so no reduced-motion override is needed.
 
 ## Verification performed
 
 - Node unit tests cover table contents (including missing values and pie percentages), generated ID uniqueness, static/interactive ARIA references, empty charts, keyboard navigation edge cases, and palette contrast ratios.
-- Playwright with axe-core checks all chart types in both interaction modes under light and dark color schemes against WCAG 2.2 A/AA rules. The browser suite also checks keyboard navigation, live-region updates, tooltip dismissal/hover/touch behavior, focus preservation and clamping after updates, renderer equivalence, 320px reflow, and forced-colors CSS.
+- Playwright with axe-core checks all chart types in both interaction modes under light and dark color schemes against WCAG 2.2 A/AA rules. The browser suite also checks token inheritance and fallbacks, CSS-color resolution, grid dashes and baseline, inherited fonts, keyboard navigation, live-region updates, tooltip dismissal/hover/touch behavior, focus preservation and clamping after updates, renderer equivalence, 320px reflow, and forced-colors system colors.
 - The assembled `demo.html` is opened in Chromium and its visible/hidden/omitted table modes and randomize control are exercised.
 
 ## Manual checklist

@@ -13,7 +13,7 @@ import {
   type PointerEvent,
   type ReactNode,
 } from 'react';
-import { buildFigure, clampPoint, nextPoint, pointDimensions, type BuildChartOptions, type ChartData, type ChartType, type SvgNode } from './core.js';
+import { buildFigure, clampPoint, nextPoint, pointDimensions, type BuildChartOptions, type ChartData, type ChartType, type GridStyle, type SvgNode } from './core.js';
 
 export type TableMode = 'hidden' | 'visible' | 'none';
 
@@ -23,6 +23,8 @@ export interface ChartProps {
   width?: number;
   height?: number;
   colors?: string[];
+  gridStyle?: GridStyle;
+  fontSize?: number;
   caption?: string;
   description?: string;
   table?: TableMode;
@@ -107,6 +109,8 @@ export function Chart({
   table = 'hidden',
   interactive = true,
   idPrefix: requestedIdPrefix,
+  gridStyle,
+  fontSize,
 }: ChartProps) {
   const reactId = useId();
   const uniqueId = reactId.replace(/[^A-Za-z0-9_-]/g, '');
@@ -116,9 +120,9 @@ export function Chart({
   const [activePoint, setActivePoint] = useState<{ category: number; series: number } | null>(null);
   const actualWidth = observedWidth || width;
   const options: BuildChartOptions & { idPrefix: string; activePoint: typeof activePoint } = {
-    type, data, width: actualWidth, height, colors, caption, description, table, interactive, idPrefix, activePoint,
+    type, data, width: actualWidth, height, colors, gridStyle, fontSize, caption, description, table, interactive, idPrefix, activePoint,
   };
-  const tree = useMemo(() => buildFigure(options), [type, data, actualWidth, height, colors, caption, description, table, interactive, idPrefix, activePoint]);
+  const tree = useMemo(() => buildFigure(options), [type, data, actualWidth, height, colors, gridStyle, fontSize, caption, description, table, interactive, idPrefix, activePoint]);
 
   useEffect(() => {
     const figure = figureRef.current;

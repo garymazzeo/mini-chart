@@ -5,7 +5,8 @@ import { resolve } from 'node:path';
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import { build } from 'esbuild';
-import { chromium } from 'playwright';
+import { chromium, firefox, webkit } from 'playwright';
+import { STYLE } from '../core.js';
 
 const require = createRequire(import.meta.url);
 const root = resolve(import.meta.dirname, '..');
@@ -41,6 +42,187 @@ function summary(figure) {
     rows: [...figure.querySelectorAll('table tr')].map((row) => [...row.children].map((cell) => cell.textContent)),
   };
 }
+
+test('design tokens, colors, grid style, and font inheritance work in both wrappers', { timeout: 120_000 }, async () => {
+  const browser = await chromium.launch({
+    headless: true,
+    ...(existsSync(chromePath) ? { executablePath: chromePath } : {}),
+  });
+  try {
+    const page = await browser.newPage({ colorScheme: 'light' });
+    const primaryToken = STYLE.palette[0].match(/^var\(([^,]+),/)?.[1];
+    const primaryFallback = STYLE.palette[0].match(/,\s*(#[\da-f]+)\)$/i)?.[1];
+    assert.ok(primaryToken && primaryFallback);
+    await page.setContent(`<!doctype html><html><head><style>
+      :root { color-scheme: light dark; }
+      @media (prefers-color-scheme: dark) { #media-scope { ${primaryToken}: #f0e040; } }
+    </style></head><body>
+      <div id="token-scope"><mini-chart id="palette-chart"></mini-chart><mini-chart id="sibling-chart"></mini-chart></div>
+      <div id="media-scope"><mini-chart id="media-chart"></mini-chart></div>
+      <mini-chart id="colors-chart"></mini-chart>
+      <mini-chart id="attribute-chart"></mini-chart>
+      <div id="react-styling-fixture"></div>
+    </body></html>`);
+    const [webBundle, reactBundle] = await Promise.all([
+      bundle('test/fixtures/web-entry.js'),
+      bundle('test/fixtures/styling-demo.jsx'),
+    ]);
+    await page.addScriptTag({ content: webBundle });
+    await page.evaluate(() => {
+      const data = { labels: ['Jan', 'Feb'], series: [{ name: 'Primary', values: [20, 40] }, { name: 'Secondary', values: [8, 16] }, { name: 'Accent', values: [5, 10] }] };
+      for (const id of ['palette-chart', 'sibling-chart', 'media-chart', 'attribute-chart']) document.querySelector(`#${id}`).data = data;
+      document.querySelector('#colors-chart').data = { labels: ['Jan', 'Feb'], series: [{ name: 'Explicit', values: [20, 40], color: 'var(--series-color, #123456)' }] };
+      document.documentElement.style.setProperty('--series-color', '#123abc');
+      document.documentElement.style.setProperty('--consumer-color', '#135724');
+    });
+    await page.addScriptTag({ content: reactBundle });
+    await page.waitForFunction(() => [...document.querySelectorAll('mini-chart')].length === 5
+      && [...document.querySelectorAll('mini-chart')].every((element) => element.shadowRoot.querySelector('svg'))
+      && document.querySelector('#react-styling-fixture svg'));
+
+    const paletteChart = page.locator('#palette-chart');
+    const siblingChart = page.locator('#sibling-chart');
+    const mediaChart = page.locator('#media-chart');
+    const fallbackFill = await paletteChart.locator('.mc-bar').first().evaluate((node) => getComputedStyle(node).fill);
+    assert.equal(fallbackFill, 'rgb(0, 114, 178)', 'an unset token resolves to its fallback color');
+    const fallbackPaletteColors = await page.evaluate(() => {
+      const svg = document.querySelector('#palette-chart').shadowRoot;
+      return [
+        getComputedStyle(svg.querySelector('.mc-point[data-point-series="0"] .mc-bar')).fill,
+        getComputedStyle(svg.querySelector('.mc-point[data-point-series="1"] .mc-bar')).fill,
+        getComputedStyle(svg.querySelector('.mc-pattern-background')).fill,
+      ];
+    });
+    assert.deepEqual(fallbackPaletteColors, ['rgb(0, 114, 178)', 'rgb(213, 94, 0)', 'rgb(0, 158, 115)'], 'all three design-token fallbacks resolve in SVG paints');
+
+    const paletteSvg = await paletteChart.locator('svg').elementHandle();
+    await page.evaluate((token) => document.documentElement.style.setProperty(token, '#123456'), primaryToken);
+    await page.waitForFunction(({ token }) => getComputedStyle(document.querySelector('#palette-chart').shadowRoot.querySelector('.mc-bar')).fill === 'rgb(18, 52, 86)' && token, { token: primaryToken });
+    assert.equal(await paletteChart.locator('.mc-bar').first().evaluate((node) => getComputedStyle(node).fill), 'rgb(18, 52, 86)');
+    assert.equal(await paletteChart.locator('.mc-legend-label').first().evaluate((node) => getComputedStyle(node).fill), 'rgb(18, 52, 86)');
+    assert.equal(await paletteChart.locator('svg').evaluate((node, old) => node === old, paletteSvg), true, 'token changes cascade without replacing the SVG');
+
+    await page.evaluate((token) => document.querySelector('#palette-chart').style.setProperty(token, '#abcdef'), primaryToken);
+    assert.equal(await paletteChart.locator('.mc-bar').first().evaluate((node) => getComputedStyle(node).fill), 'rgb(171, 205, 239)');
+    assert.equal(await siblingChart.locator('.mc-bar').first().evaluate((node) => getComputedStyle(node).fill), 'rgb(18, 52, 86)', 'a host token affects only that chart');
+
+    const mediaSvg = await mediaChart.locator('svg').elementHandle();
+    await page.evaluate((token) => document.documentElement.style.removeProperty(token), primaryToken);
+    await page.emulateMedia({ colorScheme: 'dark' });
+    assert.equal(await mediaChart.locator('.mc-bar').first().evaluate((node) => getComputedStyle(node).fill), 'rgb(240, 224, 64)');
+    assert.equal(await mediaChart.locator('svg').evaluate((node, old) => node === old, mediaSvg), true, 'dark-mode token changes do not re-render the chart');
+
+    assert.equal(await page.locator('#colors-chart .mc-bar').first().evaluate((node) => getComputedStyle(node).fill), 'rgb(18, 58, 188)', 'series.color var() resolves in a presentation attribute');
+    const attributeChart = page.locator('#attribute-chart');
+    await attributeChart.evaluate((node) => node.setAttribute('colors', '["#ff00aa"]'));
+    await page.waitForFunction(() => getComputedStyle(document.querySelector('#attribute-chart').shadowRoot.querySelector('.mc-bar')).fill === 'rgb(255, 0, 170)');
+    await attributeChart.evaluate((node) => node.setAttribute('colors', '{invalid json'));
+    await page.waitForFunction(() => document.querySelector('#attribute-chart').shadowRoot.querySelector('.mc-bar').getAttribute('fill')?.startsWith('var('));
+    assert.equal(await attributeChart.locator('.mc-bar').first().evaluate((node) => getComputedStyle(node).fill), 'rgb(0, 114, 178)', 'invalid JSON is ignored and defaults return');
+    await attributeChart.evaluate((node) => { node.colors = ['#00aa77']; });
+    await page.waitForFunction(() => getComputedStyle(document.querySelector('#attribute-chart').shadowRoot.querySelector('.mc-bar')).fill === 'rgb(0, 170, 119)');
+
+    await paletteChart.evaluate((node) => node.setAttribute('grid-style', 'dashed'));
+    const grid = paletteChart.locator('.mc-gridline:not(.mc-baseline)').first();
+    await page.waitForFunction(() => getComputedStyle(document.querySelector('#palette-chart').shadowRoot.querySelector('.mc-gridline:not(.mc-baseline)')).strokeDasharray !== 'none');
+    assert.notEqual(await grid.evaluate((node) => getComputedStyle(node).strokeDasharray), 'none');
+    const baselineDash = await paletteChart.locator('.mc-baseline').evaluate((node) => getComputedStyle(node).strokeDasharray);
+    assert.equal(baselineDash, 'none', 'the zero baseline stays solid');
+    await paletteChart.evaluate((node) => node.setAttribute('grid-style', 'solid'));
+    await page.waitForFunction(() => getComputedStyle(document.querySelector('#palette-chart').shadowRoot.querySelector('.mc-gridline')).strokeDasharray === 'none');
+    await paletteChart.evaluate((node) => { node.fontSize = 16; node.style.fontFamily = 'monospace'; });
+    assert.equal(await paletteChart.locator('.mc-axis-label').first().evaluate((node) => getComputedStyle(node).fontSize), '16px');
+    assert.match(await paletteChart.locator('.mc-axis-label').first().evaluate((node) => getComputedStyle(node).fontFamily), /monospace/);
+    await paletteChart.evaluate((node) => node.style.removeProperty('font-family'));
+    await page.locator('#token-scope').evaluate((node) => { node.style.fontFamily = 'serif'; });
+    assert.match(await paletteChart.locator('.mc-axis-label').first().evaluate((node) => getComputedStyle(node).fontFamily), /serif/);
+
+    const reactLine = page.locator('#react-styling-fixture .mc-line').first();
+    assert.equal(await reactLine.evaluate((node) => getComputedStyle(node).stroke), 'rgb(19, 87, 36)', 'React colors resolves var()');
+    assert.notEqual(await page.locator('#react-styling-fixture .mc-gridline').first().evaluate((node) => getComputedStyle(node).strokeDasharray), 'none');
+    assert.equal(await page.locator('#react-styling-fixture .mc-axis-label').first().evaluate((node) => getComputedStyle(node).fontSize), '17px');
+    await page.locator('#react-styling-fixture').evaluate((node) => { node.style.fontFamily = 'serif'; });
+    assert.match(await page.locator('#react-styling-fixture .mc-axis-label').first().evaluate((node) => getComputedStyle(node).fontFamily), /serif/);
+
+    await page.emulateMedia({ colorScheme: 'light' });
+    await page.evaluate(() => document.activeElement?.blur());
+    await page.keyboard.press('Tab');
+    assert.equal(await page.evaluate(() => document.activeElement?.id === 'palette-chart' && document.querySelector('#palette-chart').shadowRoot.activeElement?.localName === 'svg'), true);
+    await page.keyboard.press('ArrowRight');
+    await page.waitForFunction(() => document.querySelector('#palette-chart').shadowRoot.querySelector('.mc-tooltip'));
+    for (const colorScheme of ['light', 'dark']) {
+      await page.emulateMedia({ colorScheme });
+      await page.evaluate(() => document.activeElement?.blur());
+      await page.keyboard.press('Tab');
+      const systemColors = await page.evaluate(() => {
+        const sample = document.createElement('span');
+        document.body.append(sample);
+        const color = (value) => { sample.style.color = value; return getComputedStyle(sample).color; };
+        const colors = { canvasText: color('CanvasText'), canvas: color('Canvas') };
+        sample.remove();
+        return colors;
+      });
+      const tooltipColors = await paletteChart.locator('.mc-tooltip').evaluate((node) => ({
+        background: getComputedStyle(node.querySelector('rect')).fill,
+        text: getComputedStyle(node.querySelector('text')).fill,
+      }));
+      assert.deepEqual(tooltipColors, { background: systemColors.canvasText, text: systemColors.canvas }, `${colorScheme} tooltip uses readable system colors`);
+      const focusColors = await paletteChart.locator('.mc-svg-focus-light').evaluate((node) => ({
+        outer: getComputedStyle(node).stroke,
+        inner: getComputedStyle(node.parentElement.querySelector('.mc-svg-focus-dark')).stroke,
+      }));
+      assert.deepEqual(focusColors, { outer: 'rgb(255, 255, 255)', inner: 'rgb(0, 0, 0)' }, `${colorScheme} focus ring retains both contrast layers`);
+    }
+
+    await page.emulateMedia({ forcedColors: 'active' });
+    const forcedSystem = await page.evaluate(() => {
+      const reference = document.createElement('span');
+      document.body.append(reference);
+      const color = (value) => { reference.style.color = value; return getComputedStyle(reference).color; };
+      const values = { canvasText: color('CanvasText'), canvas: color('Canvas'), highlight: color('Highlight') };
+      reference.remove();
+      return values;
+    });
+    const forcedText = await paletteChart.locator('.mc-axis-label').first().evaluate((node) => getComputedStyle(node).fill);
+    const forcedGrid = await paletteChart.locator('.mc-gridline').first().evaluate((node) => getComputedStyle(node).stroke);
+    await page.keyboard.press('Tab');
+    const focusedId = await page.evaluate(() => document.activeElement?.id);
+    assert.ok(focusedId, 'keyboard focus should land on a chart');
+    const focusedChart = page.locator(`#${focusedId}`);
+    const forcedFocus = await focusedChart.locator('.mc-svg-focus-dark').evaluate((node) => ({ stroke: getComputedStyle(node).stroke, opacity: getComputedStyle(node).opacity }));
+    const forcedOuter = await focusedChart.locator('.mc-svg-focus-light').evaluate((node) => getComputedStyle(node).stroke);
+    assert.equal(forcedText, forcedSystem.canvasText);
+    assert.equal(forcedGrid, forcedSystem.canvasText);
+    assert.equal(forcedOuter, forcedSystem.canvas);
+    assert.equal(forcedFocus.stroke, forcedSystem.highlight);
+    assert.equal(forcedFocus.opacity, '1');
+  } finally {
+    await browser.close();
+  }
+});
+
+test('SVG var() presentation attributes resolve in every installed engine', { timeout: 120_000 }, async (t) => {
+  const token = STYLE.palette[0].match(/^var\(([^,]+),/)?.[1];
+  const fallback = STYLE.palette[0].match(/,\s*(#[\da-f]+)\)$/i)?.[1];
+  assert.ok(token && fallback);
+  const engines = [
+    ['Chromium', chromium, existsSync(chromePath) ? chromePath : undefined],
+    ['Firefox', firefox, undefined],
+    ['WebKit', webkit, undefined],
+  ].filter(([name, engine, executable]) => executable || existsSync(engine.executablePath()));
+  for (const [name, engine, executable] of engines) {
+    await t.test(name, async () => {
+      const browser = await engine.launch({ headless: true, ...(executable ? { executablePath: executable } : {}) });
+      try {
+        const page = await browser.newPage();
+        await page.setContent(`<style>:root{${token}:#123456}</style><svg><rect width="20" height="20" fill="${STYLE.palette[0]}"></rect></svg>`);
+        assert.equal(await page.locator('rect').evaluate((node) => getComputedStyle(node).fill), 'rgb(18, 52, 86)');
+      } finally {
+        await browser.close();
+      }
+    });
+  }
+});
 
 test('web and React renderers meet accessibility and interaction requirements', { timeout: 120_000 }, async (t) => {
   const browser = await chromium.launch({
@@ -225,10 +407,19 @@ test('web and React renderers meet accessibility and interaction requirements', 
 
     await t.test('charts reflow at 320px and forced-colors CSS applies', async () => {
       await page.setViewportSize({ width: 320, height: 900 });
-      await page.waitForTimeout(100);
+      await page.waitForFunction(() => {
+        const chart = document.querySelector('#web-line');
+        const figure = chart.shadowRoot.querySelector('figure');
+        const svg = chart.shadowRoot.querySelector('svg');
+        return Math.abs(svg.viewBox.baseVal.width - figure.getBoundingClientRect().width) < 1;
+      }, undefined, { timeout: 2000 });
       const narrow = await page.evaluate(() => ({
         viewport: document.documentElement.clientWidth,
         scroll: document.documentElement.scrollWidth,
+        host: document.querySelector('#web-line').getBoundingClientRect().width,
+        hostComputedWidth: getComputedStyle(document.querySelector('#web-line')).width,
+        svgWidth: document.querySelector('#web-line').shadowRoot.querySelector('svg').getBoundingClientRect().width,
+        svgStyle: document.querySelector('#web-line').shadowRoot.querySelector('svg').getAttribute('style'),
         figure: document.querySelector('#web-line').shadowRoot.querySelector('figure').getBoundingClientRect().width,
         viewBoxWidth: document.querySelector('#web-line').shadowRoot.querySelector('svg').viewBox.baseVal.width,
       }));
@@ -240,18 +431,40 @@ test('web and React renderers meet accessibility and interaction requirements', 
       assert.ok(forcedColors && forcedColors !== 'none');
     });
 
-    await t.test('assembled demo.html renders its three table modes and controls', async () => {
+    await t.test('assembled demo.html renders tables, themes, grid controls, and axe audit', async (demoTest) => {
       const demoPage = await browser.newPage({ viewport: { width: 800, height: 900 } });
       const pageErrors = [];
       demoPage.on('pageerror', (error) => pageErrors.push(error.message));
       try {
         await demoPage.goto(pathToFileURL(resolve(root, 'demo.html')).href);
         await demoPage.waitForFunction(() => ['revenue', 'regions', 'visitors', 'sources'].every((id) => document.querySelector(`#${id}`)?.shadowRoot?.querySelector('svg')));
+        await demoPage.addScriptTag({ path: axePath });
+        for (const colorScheme of ['light', 'dark']) {
+          await demoPage.emulateMedia({ colorScheme });
+          if (colorScheme === 'dark') await demoPage.locator('#theme-scope').evaluate((node) => node.setAttribute('data-theme', 'fallback'));
+          const result = await demoPage.evaluate(() => window.axe.run(document, {
+            runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'] },
+          }));
+          const contrast = result.violations.filter(({ id }) => id === 'color-contrast');
+          const other = result.violations.filter(({ id }) => id !== 'color-contrast');
+          assert.deepEqual(other.map(({ id, impact }) => ({ id, impact })), [], `${colorScheme} mode non-contrast axe violations`);
+          if (contrast.length) demoTest.diagnostic(`${colorScheme} mode contrast findings: ${JSON.stringify(contrast.map(({ id, impact, nodes }) => ({ id, impact, nodes: nodes.map(({ target, failureSummary }) => ({ target, failureSummary })) })))}`);
+        }
+        await demoPage.emulateMedia({ colorScheme: 'light' });
+        await demoPage.locator('#theme-scope').evaluate((node) => node.removeAttribute('data-theme'));
         assert.equal(await demoPage.locator('#revenue').locator('table').count(), 1);
         assert.match(await demoPage.locator('#visitors').locator('table').getAttribute('style'), /clip/);
         assert.equal(await demoPage.locator('#sources').locator('table').count(), 0);
         assert.equal(await demoPage.locator('#regions').locator('svg').getAttribute('data-chart-type'), 'horizontal-bar');
         assert.equal(await demoPage.locator('#revenue').locator('figcaption').textContent(), 'Monthly revenue');
+        const revenueSvg = await demoPage.locator('#revenue svg').elementHandle();
+        const defaultFill = await demoPage.locator('#revenue .mc-bar').first().evaluate((node) => getComputedStyle(node).fill);
+        await demoPage.locator('#color-theme').selectOption('brand');
+        await demoPage.waitForFunction((previous) => getComputedStyle(document.querySelector('#revenue').shadowRoot.querySelector('.mc-bar')).fill !== previous, defaultFill);
+        assert.equal(await demoPage.locator('#revenue svg').evaluate((node, old) => node === old, revenueSvg), true, 'theme selection updates tokens without rerendering');
+        await demoPage.locator('#grid-style').selectOption('dashed');
+        await demoPage.waitForFunction(() => getComputedStyle(document.querySelector('#revenue').shadowRoot.querySelector('.mc-gridline:not(.mc-baseline)')).strokeDasharray !== 'none');
+        assert.equal(await demoPage.locator('#revenue .mc-baseline').evaluate((node) => getComputedStyle(node).strokeDasharray), 'none');
         await demoPage.locator('#randomize').click();
         assert.deepEqual(pageErrors, []);
       } finally {
@@ -265,6 +478,13 @@ test('web and React renderers meet accessibility and interaction requirements', 
         await reactDemoPage.setContent('<!doctype html><html lang="en"><head><title>mini-chart React demo test</title></head><body><div id="app"></div></body></html>');
         await reactDemoPage.addScriptTag({ content: await bundle('test/fixtures/assembled-page.jsx') });
         await reactDemoPage.waitForFunction(() => document.querySelector('#app figure .mc-live-region'));
+        const reactSvg = await reactDemoPage.locator('#app figure svg').elementHandle();
+        const defaultReactFill = await reactDemoPage.locator('#app figure .mc-bar').first().evaluate((node) => getComputedStyle(node).fill);
+        await reactDemoPage.getByLabel('Color theme').selectOption('brand');
+        await reactDemoPage.waitForFunction((previous) => getComputedStyle(document.querySelector('#app .mc-bar')).fill !== previous, defaultReactFill);
+        assert.equal(await reactDemoPage.locator('#app figure svg').evaluate((node, old) => node === old, reactSvg), true, 'React theme selection only changes inherited tokens');
+        await reactDemoPage.getByLabel('Grid lines').selectOption('dashed');
+        await reactDemoPage.waitForFunction(() => getComputedStyle(document.querySelector('#app .mc-gridline:not(.mc-baseline)')).strokeDasharray !== 'none');
         const tableMode = reactDemoPage.locator('button').filter({ hasText: 'Table mode:' });
         assert.equal(await reactDemoPage.locator('#app figure table').count(), 1);
         await tableMode.click();

@@ -1,5 +1,5 @@
 // mini-chart.js — <mini-chart> custom element. DOM renderer for core.js.
-import { buildFigure, clampPoint, nextPoint, pointDimensions } from './core.js';
+import { buildFigure, clampPoint, nextPoint, pointDimensions, STYLE } from './core.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 let instanceCount = 0;
@@ -62,8 +62,9 @@ function pointFromEvent(target) {
 
 if (typeof HTMLElement !== 'undefined' && typeof customElements !== 'undefined') {
 class MiniChart extends HTMLElement {
-  static observedAttributes = ['type', 'width', 'height', 'data', 'caption', 'description', 'table', 'interactive', 'aria-label', 'aria-labelledby'];
+  static observedAttributes = ['type', 'width', 'height', 'data', 'colors', 'grid-style', 'font-size', 'caption', 'description', 'table', 'interactive', 'aria-label', 'aria-labelledby'];
   #data = null;
+  #colors = undefined;
   #activePoint = null;
   #queued = false;
   #width = 0;
@@ -73,7 +74,7 @@ class MiniChart extends HTMLElement {
   constructor() {
     super();
     const root = this.attachShadow({ mode: 'open' });
-    root.innerHTML = '<style>:host{display:block;max-width:100%}.mc-figure{max-width:100%}svg{display:block;max-width:100%;height:auto}</style>';
+    root.innerHTML = `<style>:host{display:${STYLE.element.hostDisplay};max-width:${STYLE.element.maxWidth}}.mc-figure{max-width:${STYLE.element.maxWidth}}svg{display:${STYLE.element.svgDisplay};max-width:${STYLE.element.maxWidth};height:${STYLE.element.svgHeight}}</style>`;
     root.addEventListener('keydown', (event) => this.#onKeyDown(event));
     root.addEventListener('pointermove', (event) => this.#onPointer(event));
     root.addEventListener('pointerdown', (event) => this.#onPointer(event));
@@ -82,6 +83,15 @@ class MiniChart extends HTMLElement {
   // Rich data is assigned as el.data = { labels, series }.
   get data() { return this.#data; }
   set data(value) { this.#data = value; this.#schedule(); }
+
+  get colors() { return this.#readColors(); }
+  set colors(value) { this.#colors = Array.isArray(value) ? value : undefined; this.#schedule(); }
+
+  get gridStyle() { return this.getAttribute('grid-style') ?? STYLE.grid.solidStyle; }
+  set gridStyle(value) { value == null ? this.removeAttribute('grid-style') : this.setAttribute('grid-style', String(value)); }
+
+  get fontSize() { return Number(this.getAttribute('font-size')) || STYLE.fontSize; }
+  set fontSize(value) { value == null ? this.removeAttribute('font-size') : this.setAttribute('font-size', String(value)); }
 
   connectedCallback() {
     this.#schedule();
@@ -111,16 +121,30 @@ class MiniChart extends HTMLElement {
     catch { return { labels: [], series: [] }; }
   }
 
+  #readColors() {
+    if (this.#colors !== undefined) return this.#colors;
+    if (!this.hasAttribute('colors')) return undefined;
+    try {
+      const colors = JSON.parse(this.getAttribute('colors'));
+      return Array.isArray(colors) ? colors : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
   #options() {
     const type = this.getAttribute('type') ?? 'bar';
     const data = this.#readData();
-    const width = this.#width || Number(this.getAttribute('width')) || 480;
+    const width = this.#width || Number(this.getAttribute('width')) || STYLE.width;
     const description = this.getAttribute('description') ?? undefined;
     const options = {
       type,
       data,
       width,
-      height: Number(this.getAttribute('height')) || 300,
+      height: Number(this.getAttribute('height')) || STYLE.height,
+      colors: this.#readColors(),
+      gridStyle: this.getAttribute('grid-style') ?? undefined,
+      fontSize: Number(this.getAttribute('font-size')) || undefined,
       caption: this.getAttribute('caption') || undefined,
       description,
       table: this.getAttribute('table') ?? 'hidden',
@@ -149,7 +173,7 @@ class MiniChart extends HTMLElement {
           attrs: {
             id,
             class: 'mc-visually-hidden mc-host-label',
-            style: 'position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0',
+            style: STYLE.table.hiddenStyle,
           },
           children: [text],
         });

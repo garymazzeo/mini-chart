@@ -86,10 +86,11 @@ import { Chart, type ChartProps } from ${JSON.stringify(`${packageName}/react`)}
 
 const data: ChartData = {
   labels: ['Jan'],
-  series: [{ name: 'Sales', values: [3], color: 'var(--mc-color-1)' }],
+  series: [{ name: 'Sales', values: [3], color: 'var(--consumer-color, #0072b2)' }],
 };
 const options: BuildChartOptions = {
   type: 'line', data, width: 320, height: 220, colors: ['#0072b2'],
+  gridStyle: 'dashed', fontSize: 14,
   caption: 'Typed chart', description: 'Sales in January.', table: 'visible',
   interactive: true, idPrefix: 'typed-chart',
 };
@@ -103,6 +104,9 @@ const props: ChartProps = { ...options };
 const reactElement = createElement(Chart, props);
 const customElement = document.createElement('mini-chart');
 customElement.data = data;
+customElement.colors = ['var(--consumer-color, #0072b2)'];
+customElement.gridStyle = 'dashed';
+customElement.fontSize = 14;
 void [tree, ticks, clamped, next, reactElement, customElement];
 `);
 }
@@ -149,10 +153,14 @@ const data = {
   series: [{ name: 'Sales', values: [3, 7] }],
 };
 createRoot(document.querySelector('#react-root')).render(createElement(Chart, {
-  type: 'bar', data, caption: 'Packed React chart', description: 'Sales by month.',
+  type: 'bar', data, colors: ['var(--consumer-color, #0072b2)'], gridStyle: 'dashed', fontSize: 16,
+  caption: 'Packed React chart', description: 'Sales by month.',
 }));
 const customChart = document.querySelector('#element-root mini-chart');
 customChart.data = data;
+customChart.colors = ['var(--consumer-color, #0072b2)'];
+customChart.gridStyle = 'dashed';
+customChart.fontSize = 16;
 `);
   writeFileSync(join(projectDirectory, 'element-register.js'), `import ${JSON.stringify(`${packageName}/element`)};\n`);
 }
@@ -250,7 +258,7 @@ async function main() {
     page.on('pageerror', (error) => pageErrors.push(error.message));
     await page.setContent(`<!doctype html><html lang="en"><head><title>Packed consumer</title></head><body>
       <div id="react-root"></div>
-      <section id="element-root"><mini-chart type="line" caption="Packed custom element" description="Sales by month."></mini-chart></section>
+      <section id="element-root" style="--consumer-color:#123abc"><mini-chart type="line" caption="Packed custom element" description="Sales by month."></mini-chart></section>
     </body></html>`);
     await page.addScriptTag({ content: await buildBrowserBundle('browser-consumer.jsx') });
     await page.waitForFunction(() => document.querySelector('#react-root figure svg')
@@ -261,9 +269,17 @@ async function main() {
     const rendered = await page.evaluate(() => ({
       reactSvg: document.querySelector('#react-root figure svg')?.getAttribute('data-chart-type'),
       elementSvg: document.querySelector('#element-root mini-chart').shadowRoot.querySelector('svg')?.getAttribute('data-chart-type'),
+      reactFill: getComputedStyle(document.querySelector('#react-root .mc-bar')).fill,
+      elementColor: getComputedStyle(document.querySelector('#element-root mini-chart').shadowRoot.querySelector('.mc-line')).stroke,
+      reactGridDash: getComputedStyle(document.querySelector('#react-root .mc-gridline:not(.mc-baseline)')).strokeDasharray,
+      elementGridDash: getComputedStyle(document.querySelector('#element-root mini-chart').shadowRoot.querySelector('.mc-gridline:not(.mc-baseline)')).strokeDasharray,
       registered: customElements.get('mini-chart') !== undefined,
     }));
-    assert.deepEqual(rendered, { reactSvg: 'bar', elementSvg: 'line', registered: true });
+    assert.deepEqual(rendered, {
+      reactSvg: 'bar', elementSvg: 'line',
+      reactFill: 'rgb(0, 114, 178)', elementColor: 'rgb(18, 58, 188)',
+      reactGridDash: '6px, 3px', elementGridDash: '6px, 3px', registered: true,
+    });
     assert.deepEqual(pageErrors, []);
     console.log('Bundled React and custom-element entries rendered in Chromium; duplicate registration was safe.');
     await page.close();

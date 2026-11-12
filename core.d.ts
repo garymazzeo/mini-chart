@@ -1,5 +1,6 @@
 export type ChartType = 'bar' | 'horizontal-bar' | 'line' | 'pie';
 export type TableMode = 'hidden' | 'visible' | 'none';
+export type GridStyle = 'solid' | 'dashed';
 
 export interface ChartSeries {
   name?: string;
@@ -30,6 +31,8 @@ export interface BuildChartOptions {
   width?: number;
   height?: number;
   colors?: string[];
+  gridStyle?: GridStyle;
+  fontSize?: number;
   caption?: string;
   description?: string;
   table?: TableMode;
@@ -44,6 +47,7 @@ export interface SvgNode {
   children: Array<SvgNode | string>;
 }
 
+export const STYLE: Readonly<{ palette: readonly string[]; [key: string]: unknown }>;
 export const PALETTE: string[];
 export function niceTicks(min: number, max: number, count?: number): number[];
 export function buildChart(options?: BuildChartOptions): SvgNode;
